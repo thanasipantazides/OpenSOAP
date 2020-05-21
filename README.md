@@ -1,2 +1,2 @@
 # openSOAR
-Satellite Operations Analysis Resource
+Satellite Operations Analytics Resource
