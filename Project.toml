@@ -1,4 +1,4 @@
-name = "openSOAR"
+name = "OpenSOAP"
 uuid = "2c6d34cf-35ee-49d7-b3b5-1bd6781e04ee"
 authors = ["Thanasi Pantazides <thanasipantazides@gmail.com>"]
 version = "0.1.0"

@@ -1,9 +1,9 @@
-using Documenter, openSOAR
+using Documenter, OpenSOAP
 
 makedocs(
     format = Documenter.LaTeX(),
-    sitename="openSOAR Documentation", 
-    modules=[openSOAR],
+    sitename="OpenSOAP Documentation", 
+    modules=[OpenSOAP],
     authors="Athanasios Pantazides",
     pages=Any[
         "Home"=>"index.md",

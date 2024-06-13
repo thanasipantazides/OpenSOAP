@@ -1,4 +1,4 @@
 # API
 ```@autodocs
-Modules = [openSOAR]
+Modules = [OpenSOAP]
 ```

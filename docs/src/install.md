@@ -1,4 +1,4 @@
-# openSOAR Installation Guide
+# OpenSOAP Installation Guide
 ## New to Julia?
 If you are new to the Julia programming language, follow these steps to install the language:
 1. Install Julia for your OS [from this page](https://julialang.org/downloads/).
@@ -11,11 +11,11 @@ julia
 ## Setting up this project
 Find a folder on your computer you want to store this work in. Navigate there in the terminal. When you've arrived, do:
 ```bash
-git clone https://github.com/thanasipantazides/openSOAR.git
-cd openSOAR
+git clone https://github.com/thanasipantazides/OpenSOAP.git
+cd OpenSOAP
 ```
 
-From here, you should start Julia using the `openSOAR` project environment:
+From here, you should start Julia using the `OpenSOAP` project environment:
 ```bash
 julia --project=.
 ```
@@ -38,7 +38,7 @@ julia> include("test/plot.jl")
 ## Building documentation
 Navigate to the docs folder, and start the local Julia environment:
 ```bash
-cd openSOAR/docs
+cd OpenSOAP/docs
 julia --project=.
 ```
 
@@ -48,7 +48,7 @@ julia> ]
 pkg> activate .
 ```
 
-Include the `openSOAR` package as a dependency:
+Include the `OpenSOAP` package as a dependency:
 ```julia
 pkg> dev ..
 ```
@@ -58,4 +58,4 @@ Finally, build the documentation like this:
 julia> include("make.jl")
 ```
 
-The PDF document will appear in `openSOAR/docs/build/`.
+The PDF document will appear in `OpenSOAP/docs/build/`.

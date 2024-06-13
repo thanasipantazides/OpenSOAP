@@ -1,5 +1,5 @@
-# openSOAR
-This package provides some tools for performing system-level analyses of spacecraft mission operations. It could be useful for investigating power and data budgets, and playing with different ConOps designs. 
+# OpenSOAP
+The Spacecraft Operations Analysis Package provides some tools for performing system-level analyses of spacecraft mission operations. It could be useful for investigating power and data budgets, and playing with different ConOps designs. 
 
 ## Installation
 See the installation guide included in the [docs package](docs/src/install.md).

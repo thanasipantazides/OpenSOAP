@@ -1,4 +1,4 @@
-module openSOAR
+module OpenSOAP
 
 include("base.jl")
 include("mission.jl")
@@ -16,4 +16,4 @@ export plot!, plot_earth!, plot_spacecraft!, plot_targets!, plot_detail!, plot_v
 
 greet() = print("Hello World!")
 
-end # module openSOAR
+end # module OpenSOAP

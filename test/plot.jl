@@ -1,6 +1,6 @@
 using GLMakie, LinearAlgebra
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
-using openSOAR
+using OpenSOAP
 
 function make_solar_panels()::Vector{SolarPanel}
     pxf = SolarPanel([1.0;0;0], 0.295, 0.005*4)
