@@ -1,0 +1,18 @@
+name = "openSOAR"
+uuid = "2c6d34cf-35ee-49d7-b3b5-1bd6781e04ee"
+authors = ["Thanasi Pantazides <thanasipantazides@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+SatelliteToolbox = "6ac157d9-b43d-51bb-8fab-48bf53814f4a"
+SatelliteToolboxBase = "9e17983a-0463-41a7-9a16-1682db6d8b66"
+SatelliteToolboxCelestialBodies = "b0edd99f-a7ca-4aa6-9a1e-a53e8f506046"
+SatelliteToolboxTransformations = "6b019ec1-7a1e-4f04-96c7-a9db1ca5514d"
+YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"

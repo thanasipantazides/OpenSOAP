@@ -1,0 +1,85 @@
+name:   "IMPAX"
+
+frames:
+  - ECI: &eci ECI       # Earth-centered inertial frame
+  - ICRF: &icrf ICRF    # International Celestial Reference Frame (solar system barycentric)
+  - ECEF: &ecef ECEF    # Earth-centered, Earth-fixed
+  - LLA: &lla LLA       # (geodetic) latitude, longitude, altitude
+  - NED: &ned NED       # North-East-Down
+
+simulation:
+  - start_date:   [2027, 11, 28, 0, 25, 0]  
+  - duration:     360000  # s
+  - stepsize:     1       # s
+  - initial_conditions:
+    frame:      *eci
+    position:   [6871e3, 0, 0]
+    ang_velocity: [1e-2,0,0]   # rad/s
+
+orbit:  
+  inclination:    70  # degrees
+  perigee_alt:    500 # km
+  eccentricity:   0.0
+
+spacecraft:
+  mass_properties:
+    mass:     11 # kg
+    inertia:
+      - [2.0e-4,  0,  0]
+      - [0,  1.0e-4,  0]
+      - [0,  0,  4.0e-4] # kg . m^2
+  
+  power_properties:
+    capacity:     84  # W . hr
+  
+  data_properties:
+    capacity:         64e9    # bytes
+    base_production:  1e2     # bps
+
+  modes:
+    - 
+      name: idle
+      power_out:  1
+      data_in:    1
+    - 
+      name: detumble
+      power_out:  10 
+      data_in:    2
+    
+targets:
+  - 
+    name:           sofia
+    frame:          *lla
+    position:       [42.698334, 23.3219941, 595]
+    direction:      [0, 0, 1]
+    cone:           70      # deg
+    data_in:        -20e6   # bps
+    power_in:       0       # bps
+    data_pointing_gain:   -1      # dB/deg      # for capturing effect of off-pointing on data_in
+  -
+    name:           minneapolis
+    frame:          *lla
+    position:       [44.986656, -93.258133, 252]
+    direction:      [0, 0, 1]
+    cone:           20 # deg
+    data_in:        -20e6   # bps
+    power_in:       0       # bps
+    data_pointing_gain:  -1      # dB/deg      # for capturing effect of off-pointing on data_in
+  - 
+    name:           sun
+    frame:          *icrf
+    position:       [0,0,0]
+    direction:      [0,0,0]
+    cone:           180     # deg
+    data_in:        0
+    power_in:       1361    # W/m^2
+    data_pointing_gain:  0      # dB/deg      # for capturing effect of off-pointing on data_in
+  - 
+    name:           track
+    frame:          *ned
+    position:       [0,0,1]
+    direction:      [0,0,-1]
+    cone:           180
+    data_in:        10e3  # bps
+    power_in:       0
+    data_pointing_gain:   5   # dB/deg

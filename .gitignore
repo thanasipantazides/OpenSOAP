@@ -1,0 +1,16 @@
+
+
+# macOS
+.DS_Store
+*/.DS_Store
+
+# Julia
+Manifest.toml
+*/Manifest.toml
+
+docs/build/
+docs/site/
+
+# project
+assets/*
+!assets/map_diffuse.png
