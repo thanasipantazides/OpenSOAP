@@ -64,9 +64,6 @@ function setup_parameters()::LEOSimulation
 end
 
 function run_orbit(tspan::Vector{<:Real}, dt::Real)
-    
-    # tspan = [0, 1000*3600]
-    # dt = 10
 
     m = 10 # kg
     I = diagm([2;1;4])*1e-3
@@ -99,13 +96,7 @@ end
 function plot_main()
     # compute orbit
     println("integrating...")
-    # start_time_jd = SatelliteToolboxTransformations.date_to_jd(2027, 11, 28, 0, 25, 0)
-    # start_time_s = start_time_jd * 3600 * 24
-    # duration_s = 3600*100
-    # tspan = [start_time_s, start_time_s + duration_s]
-    # dt_s = 1
     sim = setup_parameters()
-    # soln = run_orbit(tspan, dt_s)
     soln = run_orbit(sim)
     n_t = length(soln["time"])
 
@@ -170,19 +161,15 @@ function plot_main()
         return soln["time"][t_i]
     end
 
-    
     play_button = Button(fig[5,5], label="play")
 
+    # lighting position of sun:
     sun_light = lift(t_jd_s) do t_jd_s
         pos_eci = SatelliteToolboxCelestialBodies.sun_position_mod(t_jd_s/3600/24)
         return Vec3f(pos_eci)
     end
 
-    
-
-    
-    sun_vhist = visibility_history(sun, soln)
-    # visibilities = Dict("sun"=>sun_vhist)
+    # compute when each target is visible from spacecraft:
     visibilities = Dict()
     for target in target_list
         visibilities[target.name] = visibility_history(target, soln)
@@ -194,7 +181,7 @@ function plot_main()
     dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), sun_light)
     al = AmbientLight(RGBf(0.3, 0.3, 0.3))
 
-    # start scene:
+    # start main scene:
     ax = LScene(
         fig[1:4,1:3], 
         show_axis=false, 
@@ -203,7 +190,7 @@ function plot_main()
         clear=true)
     )
     # populate auxiliary axes:
-    detail = Axis(
+    detail_ax = Axis(
         fig[1,4], 
         backgroundcolor=:black, 
         limits=(0, soln["time"][end] - soln["time"][1], -0.2, 0.2), 
@@ -211,7 +198,7 @@ function plot_main()
         xlabel="Time [s]", 
         ylabel="Angular rate [rad/s]"
     )
-    visible = Axis(
+    visible_ax = Axis(
         fig[2,4],
         backgroundcolor=:black, 
         limits=(0, soln["time"][end] - soln["time"][1], 0, length(visibilities)), 
@@ -219,13 +206,21 @@ function plot_main()
         xlabel="Time [s]", 
         ylabel="Visible?"
     )
-    power = Axis(
+    power_ax = Axis(
         fig[3,4],
         backgroundcolor=:black, 
         limits=(0, soln["time"][end] - soln["time"][1], 0, sim.mission.spacecraft.power.capacity/3600), 
         title="Power", 
         xlabel="Time [s]", 
         ylabel="Battery capacity [Wh]"
+    )
+    data_ax = Axis(
+        fig[4,4],
+        backgroundcolor=:black, 
+        limits=(0, soln["time"][end] - soln["time"][1], 0, 10), # sim.mission.spacecraft.data.capacity/8e6
+        title="Data [PLACEHOLDER]", 
+        xlabel="Time [s]", 
+        ylabel="Storage [MB]"
     )
     
     # load Earth texture (these are all equirectangular projection/plate carreé):
@@ -238,12 +233,12 @@ function plot_main()
     plot_earth!(ax, t_jd_s, eops, texture)
     plot_spacecraft!(ax, t_jd_s, 10000, soln)
     plot_targets!(ax, target_list, t_jd_s, eops)
-    plot_detail!(detail, t_jd_s, soln)
-    plot_visibilities!(visible, t_jd_s, visibilities, soln)
-    plot_power!(power, t_jd_s, visibilities, soln)
+    plot_detail!(detail_ax, t_jd_s, soln)
+    plot_visibilities!(visible_ax, t_jd_s, visibilities, soln)
+    plot_power!(power_ax, t_jd_s, visibilities, soln)
 
-    fig[2,5] = Legend(fig, visible, "Visibility", framevisible = false)
-    linkxaxes!(detail, visible, power)
+    fig[2,5] = Legend(fig, visible_ax, "Visibility", framevisible = false)
+    linkxaxes!(detail_ax, visible_ax, power_ax)
    
     on(play_button.clicks, priority=1) do n
         if play_button.label == "play"

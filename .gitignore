@@ -14,3 +14,4 @@ docs/site/
 # project
 assets/*
 !assets/map_diffuse.png
+!assets/example_screenshot.png

@@ -9,3 +9,6 @@ Documentation is included in the [docs folder](docs/).
 
 ## Usage
 Wait until I improve the docs, I guess! Or just get [`test/plot.jl`](test/plot.jl) to run.
+
+An example display:
+![mission simulation](assets/example_screenshot.png?raw=true)
