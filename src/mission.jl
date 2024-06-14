@@ -56,6 +56,7 @@ end
     name::String
     # modes::Vector{Mode}
     spacecraft::SpacecraftProperties
+    targets::Vector{<:AbstractTarget}
     # targets::Vector{FrameFixedTarget}
 end
 

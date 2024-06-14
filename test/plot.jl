@@ -12,6 +12,33 @@ function make_solar_panels()::Vector{SolarPanel}
     return [pxf; pxb; pyf; pyb; pzf; pzb]
 end
 
+function make_targets()
+    eops = SatelliteToolboxTransformations.fetch_iers_eop()
+    sun = SunTarget(
+        "sun",
+        eops
+    )
+
+    targetecef1 = GroundTarget(
+        "station1",
+        [51.4934*π/180; 0.0; 3],
+        [0;0;1],
+        pi/2.5,
+        eops
+    )
+    
+    targetecef2 = GroundTarget(
+        "station2", 
+        [44.9778*π/180; -93.265*π/180; 300],
+        [0;0;1],
+        pi/6,
+        eops
+    )
+
+    target_list = [sun; targetecef1; targetecef2]
+    return target_list
+end
+
 function setup_parameters()::LEOSimulation
     
     earth_data = EarthProperties(3.986e14, 1.081874e-4, SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS, 1361)
@@ -32,6 +59,8 @@ function setup_parameters()::LEOSimulation
 
     x0 = [r0;v0;w0;vec(C_BI0);E0]
 
+    targets = make_targets()
+
     mass_data = MassProperties(
         10.0, # kg
         diagm([2;1;4])*1e-3
@@ -49,7 +78,8 @@ function setup_parameters()::LEOSimulation
     )
     mission_data = Mission(
         "impax",
-        spacecraft_data
+        spacecraft_data,
+        targets
     )
 
     leo_sim = LEOSimulation(
@@ -89,66 +119,18 @@ function run_orbit(sim::LEOSimulation)
     return soln
 end
 
-function gen_targets(targets::Vector{FrameFixedTarget}, times_s::Vector{<:Real}, start_jd::Real)
-
-end
-
 function plot_main()
+    println("loading transformations...")
+    eops = SatelliteToolboxTransformations.fetch_iers_eop()
     # compute orbit
     println("integrating...")
     sim = setup_parameters()
     soln = run_orbit(sim)
     n_t = length(soln["time"])
 
-    # compute targets
-    println("making targets...")
-    eops = SatelliteToolboxTransformations.fetch_iers_eop()
-
-    sun = FrameFixedTarget(
-        "sun",
-        3,
-        [0;0;0],
-        [0;0;0],
-        pi,
-        :ICRS,
-        eops
-    )
-    
-    gmt_loc = SatelliteToolboxTransformations.geodetic_to_ecef(51.4934*π/180, 0.0, 3)
-    mpls_loc = SatelliteToolboxTransformations.geodetic_to_ecef(44.9778*π/180, -93.265*π/180, 3)
-    gmt_loc = Vector(gmt_loc[:])
-    mpls_loc = Vector(mpls_loc[:])
-    angt = -pi/2
-    C_target = [
-        cos(angt) -sin(angt) 0;
-        sin(angt) cos(angt) 0;
-        0 0 1
-    ]
-    targecef1 = FrameFixedTarget(
-        "station1",
-        1,
-        gmt_loc,
-        [1;0;0],
-        pi/3,
-        :ECEF,
-        eops
-    )
-    
-    targetecef2 = FrameFixedTarget(
-        "station2", 
-        2, 
-        mpls_loc,
-        [1;0;0],
-        pi/6,
-        :ECEF,
-        eops
-    )
-
-    target_list = [sun; targecef1; targetecef2]
-
     # plotting
     println("plotting...")
-    GLMakie.activate!()
+    GLMakie.activate!(title="OpenSOAP")
     
     fig = Figure(size=(1400,840))
     display(fig)
@@ -170,6 +152,7 @@ function plot_main()
     end
 
     # compute when each target is visible from spacecraft:
+    target_list = sim.mission.targets
     visibilities = Dict()
     for target in target_list
         visibilities[target.name] = visibility_history(target, soln)

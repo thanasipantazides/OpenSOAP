@@ -27,6 +27,11 @@ function integrate_system(dynamics!::Function, initial::Vector{<:Real}, tspan::V
     return soln
 end
 
+"""
+    rk4_step!(dynamics!, x_new, x, t, dt, params)
+
+Integrate the dynamical system (specified by `dynamics!()`) by one timestep `dt`, using the 4th order Runge-Kutta method.
+"""
 function rk4_step!(dynamics!::Function, x_new::Vector{<:Real}, x::Vector{<:Real}, t::Real, dt::Real, params)
     k1 = zeros(size(x))
     k2 = zeros(size(x))

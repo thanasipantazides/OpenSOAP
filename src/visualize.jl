@@ -2,13 +2,6 @@ using GLMakie, Colors, GeometryBasics, LinearAlgebra
 using SatelliteToolboxBase, SatelliteToolboxTransformations
 using FileIO
 
-# for live plotting (Observables), want a family of functions that plot 
-
-function r_ecef_to_eci_from_obs(t_jd, iers_eops)
-    # t_jd should get passed in as the .value of an 
-    return r_ecef_to_eci(ITRF(), J2000(), t_jd, iers_eops)
-end
-
 function plot_power!(ax::Makie.Axis, t_jd_s, target_histories::Dict, soln::Dict)
     playhead = lift(t_jd_s) do t_jd_s
         t_0 = soln["time"][1]
@@ -46,12 +39,17 @@ function plot_visibilities!(ax::Makie.Axis, t_jd_s, target_histories::Dict, soln
     for (key, val) in target_histories
         t_0 = soln["time"][1]
 
+        # println(key)
         change = diff(val)
         starts = findall(i->(i > 0), change)
         stops = findall(i->(i < 0), change)
         if val[1] == 1
-            starts = [1 starts]
+            starts = [1; starts]
         end 
+        if length(starts) == 0 && length(stops) == 0
+            println("found no contacts for key!")
+            continue
+        end
         # println(starts)
         # println(stops)
         plotval = [Rect(soln["time"][starts[i]] - t_0, li - 1, soln["time"][stops[i] - 1] - soln["time"][starts[i]], 1) for i in 1:min(length(starts), length(stops))]
@@ -77,28 +75,6 @@ function plot_visibilities!(ax::Makie.Axis, t_jd_s, target_histories::Dict, soln
 end
 
 function plot_detail!(ax::Makie.Axis, t_jd_s, soln::Dict)
-    this_i = lift(t_jd_s) do t_jd_s
-        (_,i) = findmin(x->abs(x - t_jd_s), soln["time"])
-        return i
-    end
-    # x_hist = lift(this_i) do this_i
-    #     t_0 = soln["time"][1]
-    #     # return ([soln["time"][j] - t_0 for j in 1:this_i], [soln["state"][7,j] for j in 1:this_i])
-    #     return Point2f[(soln["time"][j] - t_0,  soln["state"][7,j]) for j in 1:this_i]
-    # end
-    # y_hist = lift(this_i) do this_i
-    #     t_0 = soln["time"][1]
-    #     # return ([soln["time"][j] - t_0 for j in 1:this_i], [soln["state"][7,j] for j in 1:this_i])
-    #     return Point2f[(soln["time"][j] - t_0,  soln["state"][8,j]) for j in 1:this_i]
-    # end
-    # z_hist = lift(this_i) do this_i
-    #     t_0 = soln["time"][1]
-    #     # return ([soln["time"][j] - t_0 for j in 1:this_i], [soln["state"][7,j] for j in 1:this_i])
-    #     return Point2f[(soln["time"][j] - t_0,  soln["state"][9,j]) for j in 1:this_i]
-    # end
-    # x_hist = lift(this_i) do this_i
-    #     return [soln["state"][7,j] for j in 1:this_i]
-    # end
 
     x_hist = soln["state"][7,:]
     y_hist = soln["state"][8,:]
@@ -195,30 +171,23 @@ function plot_spacecraft!(ax::Makie.LScene, t_jd_s, tail_length::Integer, soln::
     )
 end
 
-function plot_targets!(ax::Makie.LScene, targets::Vector{FrameFixedTarget}, t_jd_s, eops)
+function plot_targets!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, t_jd_s, eops)
     r_E = EARTH_EQUATORIAL_RADIUS
     arrow_scale = 0.01
     axis_scale = 2
 
     println(targets)
-    celestial_targets = [target for target in targets if target.frame == :ICRS]
-    ground_targets = [target for target in targets if target.frame == :ECEF]
+    sun_targets = [target for target in targets if typeof(target) === SunTarget]
+    ground_targets = [target for target in targets if typeof(target) === GroundTarget]
 
-    C_IF = lift(t_jd_s) do t_jd_s
-        C_IF_r = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/24/3600, eops)
-        C_IF_m = Matrix(C_IF_r)
-        # eci vector = C_IF * ecef vector 
-        return C_IF_m
-    end
-
-    gs_pts = lift(C_IF) do C_IF
+    gs_pts = lift(t_jd_s) do t_jd_s
         # this is a hack---need to check that the target actually is in ECEF.
-        return [Point3f(C_IF*target.position) for target in ground_targets]
+        return [Point3f(position_eci(target, t_jd_s)) for target in ground_targets]
     end
 
     # find a much less hacky way to do this:
     sun_pos = lift(t_jd_s) do t_jd_s
-        sun_I = SatelliteToolboxCelestialBodies.sun_position_mod(t_jd_s/3600/24)
+        sun_I = position_eci(sun_targets[1], t_jd_s)
         sun_proj = axis_scale*r_E*sun_I/norm(sun_I)
         return [Vec3f(sun_proj)]
     end
@@ -226,7 +195,10 @@ function plot_targets!(ax::Makie.LScene, targets::Vector{FrameFixedTarget}, t_jd
         return [Point3f([0;0;0])]
     end
 
-    cone_meshes = lift(C_IF) do C_IF
+    cone_meshes = lift(t_jd_s) do t_jd_s
+        C_IF_r = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/24/3600, eops)
+        C_IF = Matrix(C_IF_r)
+
         nθ = 20
         nζ = 2
         θ = range(0, stop=2π, length=nθ)
@@ -241,13 +213,13 @@ function plot_targets!(ax::Makie.LScene, targets::Vector{FrameFixedTarget}, t_jd
             # then transform to align with zenith-up at target.position
             target = ground_targets[k]
             b = tan(target.cone)
-            C_FT = r_min_arc([0;0;1], target.position)
+            C_FT = r_min_arc([0;0;1], Vector(position_ecef(target, t_jd_s)))
 
             # note: currently, this ignores FixedFrameTarget.direction
             for i in 1:nθ
                 for j in 1:nζ
                     # a point in the mesh
-                    p = C_IF*(C_FT*[b*cos(θ[i])*ζ[j]; b*sin(θ[i])*ζ[j]; ζ[j]] + target.position)
+                    p = C_IF*(C_FT*[b*cos(θ[i])*ζ[j]; b*sin(θ[i])*ζ[j]; ζ[j]] + position_ecef(target, t_jd_s))
                     mesh_X[i,j,k] = p[1]
                     mesh_Y[i,j,k] = p[2]
                     mesh_Z[i,j,k] = p[3]
@@ -284,8 +256,8 @@ function plot_targets!(ax::Makie.LScene, targets::Vector{FrameFixedTarget}, t_jd
         )
     end
 
-    for i in 1:length(celestial_targets)
-        if celestial_targets[i].name == "sun"
+    for i in 1:length(sun_targets)
+        if sun_targets[i].name == "sun"
             println("plotting sun!")
             arrows!(
                 ax,
@@ -297,7 +269,6 @@ function plot_targets!(ax::Makie.LScene, targets::Vector{FrameFixedTarget}, t_jd
             )
         end
     end
-
 end
 
 function plot_earth!(ax::Makie.LScene, t_jd_s, iers_eops, texture_ecef)

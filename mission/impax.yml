@@ -8,13 +8,13 @@ frames:
   - NED: &ned NED       # North-East-Down
 
 simulation:
-  - start_date:   [2027, 11, 28, 0, 25, 0]  
+  - start_date:   [2028, 1, 1, 0, 0, 0]  
   - duration:     360000  # s
   - stepsize:     1       # s
   - initial_conditions:
     frame:      *eci
     position:   [6871e3, 0, 0]
-    ang_velocity: [1e-2,0,0]   # rad/s
+    ang_velocity: [1e-2, 0, 0]   # rad/s
 
 orbit:  
   inclination:    70  # degrees
@@ -31,6 +31,12 @@ spacecraft:
   
   power_properties:
     capacity:     84  # W . hr
+    base_consumption: 22  # W
+    panels:
+      - 
+        normal:     [0, 0, -1]
+        efficiency: 0.295   
+        area:       0.1206  # m
   
   data_properties:
     capacity:         64e9    # bytes
