@@ -28,8 +28,9 @@ end
 
 @kwdef struct DataProperties{T<:Real}
     capacity::T
+    production::T
     transmit::T
-    antennas::Vector{Antenna}
+    # antennas::Vector{Antenna}
 end
 
 @kwdef struct MassProperties{T<:Real}
@@ -47,7 +48,7 @@ end
 @kwdef struct SpacecraftProperties
     name::String
     power::PowerProperties
-    # data::DataProperties
+    data::DataProperties
     mass::MassProperties
     # modes::Vector{Mode}
 end

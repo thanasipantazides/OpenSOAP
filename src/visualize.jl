@@ -28,6 +28,32 @@ function plot_power!(ax::Makie.Axis, t_jd_s, target_histories::Dict, soln::Dict)
     )
 end
 
+function plot_data!(ax::Makie.Axis, t_jd_s, target_histories::Dict, soln::Dict)
+    playhead = lift(t_jd_s) do t_jd_s
+        t_0 = soln["time"][1]
+        return t_jd_s - t_0
+    end
+    
+    e_hist = soln["state"][20,:]
+    
+    lw = 2.0
+    lines!(
+        ax, 
+        soln["time"] .- soln["time"][1],
+        e_hist/8e6,
+        color=:cyan,
+        linewidth=lw
+    )
+
+    vlines!(
+        ax,
+        playhead,
+        color=:yellow,
+        alpha=0.7,
+        linewidth=1
+    )
+end
+
 function plot_visibilities!(ax::Makie.Axis, t_jd_s, target_histories::Dict, soln::Dict)
 
     playhead = lift(t_jd_s) do t_jd_s

@@ -2,6 +2,11 @@ using GLMakie, LinearAlgebra
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
 using OpenSOAP
 
+@doc raw"""
+    make_solar_panels()
+
+Construct an array of solar panels for the spacecraft.
+"""
 function make_solar_panels()::Vector{SolarPanel}
     pxf = SolarPanel([1.0;0;0], 0.295, 0.005*4)
     pxb = SolarPanel([-1.0;0;0], 0.295, 0.005*4)
@@ -12,6 +17,11 @@ function make_solar_panels()::Vector{SolarPanel}
     return [pxf; pxb; pyf; pyb; pzf; pzb]
 end
 
+@doc raw"""
+    make_targets()
+
+Construct a list of target objects for pointing.
+"""
 function make_targets()
     eops = SatelliteToolboxTransformations.fetch_iers_eop()
     sun = SunTarget(
@@ -39,6 +49,11 @@ function make_targets()
     return target_list
 end
 
+@doc raw"""
+    setup_parameters()
+
+Convenience function to build all necessary simulation data, and create a `LEOSimulation` structure to pass to the integrator.
+"""
 function setup_parameters()::LEOSimulation
     
     earth_data = EarthProperties(3.986e14, 1.081874e-4, SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS, 1361)
@@ -56,8 +71,9 @@ function setup_parameters()::LEOSimulation
     w0 = [1;1;1]*1e-2
     C_BI0 = diagm([1;1;1])
     E0 = 40*3600
+    S0 = 16*8e9
 
-    x0 = [r0;v0;w0;vec(C_BI0);E0]
+    x0 = [r0;v0;w0;vec(C_BI0);E0;S0]
 
     targets = make_targets()
 
@@ -70,10 +86,15 @@ function setup_parameters()::LEOSimulation
         10,         # W
         make_solar_panels()
     )
+    data_data = DataProperties(
+        capacity=8*64e9,     # b
+        production=1e6,        # bps
+        transmit=20e6        # bps
+    )
     spacecraft_data = SpacecraftProperties(
         "impax",
         power_data,
-        # data_data,
+        data_data,
         mass_data
     )
     mission_data = Mission(
@@ -81,7 +102,6 @@ function setup_parameters()::LEOSimulation
         spacecraft_data,
         targets
     )
-
     leo_sim = LEOSimulation(
         earth=earth_data,
         mission=mission_data,
@@ -93,27 +113,11 @@ function setup_parameters()::LEOSimulation
     return leo_sim
 end
 
-function run_orbit(tspan::Vector{<:Real}, dt::Real)
+@raw doc"""
+    run_orbit(sim::LEOSimulation)
 
-    m = 10 # kg
-    I = diagm([2;1;4])*1e-3
-    p_system = SystemData(m,I)
-    p_earth = EarthData(3.986e14, 1.081874e-4, 6371e3, 1361)
-    p_sim = SimulationParameters(p_earth, p_system)
-    
-    inc = 70*pi/180
-    x0 = [p_sim.earth.r+550e3; 0; 0]
-    v0m = sqrt(p_sim.earth.mu/norm(x0))
-    v0 = 1.0*[0; v0m*cos(inc); v0m*sin(inc)]
-    w0 = [1;1;1]*1e-2
-    C_BI0 = I
-
-    x0 = [x0;v0;w0;vec(C_BI0)]
-    
-    soln = integrate_system(dynamics_orbit!, x0, tspan, dt, p_sim)
-    return soln
-end
-
+Perform numerical integration of simulation problem defined in `LEOSimulation` structure, and return `soln::Dict` with solution data (keys `"time"`, a time history; and `"state"`, a state vector history).
+"""
 function run_orbit(sim::LEOSimulation)
     soln = integrate_system(dynamics_orbit!, sim.initstate, sim.tspan, sim.dt, sim)
     return soln
@@ -200,7 +204,7 @@ function plot_main()
     data_ax = Axis(
         fig[4,4],
         backgroundcolor=:black, 
-        limits=(0, soln["time"][end] - soln["time"][1], 0, 10), # sim.mission.spacecraft.data.capacity/8e6
+        limits=(0, soln["time"][end] - soln["time"][1], 0, sim.mission.spacecraft.data.capacity/8e6),
         title="Data [PLACEHOLDER]", 
         xlabel="Time [s]", 
         ylabel="Storage [MB]"
@@ -219,9 +223,10 @@ function plot_main()
     plot_detail!(detail_ax, t_jd_s, soln)
     plot_visibilities!(visible_ax, t_jd_s, visibilities, soln)
     plot_power!(power_ax, t_jd_s, visibilities, soln)
+    plot_data!(data_ax, t_jd_s, visibilities, soln)
 
     fig[2,5] = Legend(fig, visible_ax, "Visibility", framevisible = false)
-    linkxaxes!(detail_ax, visible_ax, power_ax)
+    linkxaxes!(detail_ax, visible_ax, power_ax, data_ax)
    
     on(play_button.clicks, priority=1) do n
         if play_button.label == "play"
