@@ -65,7 +65,7 @@ function visibility_history(target::T, soln::Dict) where T<:AbstractTarget
             visibility[i] = sun_I'*sat_I / norm(sun_I) / norm(sat_I) > -sqrt(1 - r_E^2 / norm(sat_I)^2)
         end
     elseif typeof(target) == GroundTarget
-        println("in visibility_history, name: ", target.name)
+        # println("in visibility_history, name: ", target.name)
         for i in 1:length(soln["time"])
             target_I = position_eci(target, soln["time"][i])
             sat_I = soln["state"][1:3,i]

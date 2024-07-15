@@ -202,7 +202,6 @@ function plot_targets!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, t_jd
     arrow_scale = 0.01
     axis_scale = 2
 
-    println(targets)
     sun_targets = [target for target in targets if typeof(target) === SunTarget]
     ground_targets = [target for target in targets if typeof(target) === GroundTarget]
 
@@ -284,7 +283,6 @@ function plot_targets!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, t_jd
 
     for i in 1:length(sun_targets)
         if sun_targets[i].name == "sun"
-            println("plotting sun!")
             arrows!(
                 ax,
                 sun_root,
