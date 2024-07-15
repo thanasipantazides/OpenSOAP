@@ -34,23 +34,26 @@ function make_targets()
         eops
     )
 
-    targetecef1 = GroundTarget(
-        "station1",
-        [51.4934*π/180; 0.0; 3],
-        [0;0;1],
-        pi/2.5,
-        eops
-    )
+    # targetecef1 = GroundTarget(
+    #     "station1",
+    #     [51.4934*π/180; 0.0; 3],
+    #     [0;0;1],
+    #     pi/2.5,
+    #     eops
+    # )
     
-    targetecef2 = GroundTarget(
-        "station2", 
-        [44.9778*π/180; -93.265*π/180; 300],
-        [0;0;1],
-        pi/6,
-        eops
-    )
+    # targetecef2 = GroundTarget(
+    #     "station2", 
+    #     [44.9778*π/180; -93.265*π/180; 300],
+    #     [0;0;1],
+    #     pi/6,
+    #     eops
+    # )
 
-    target_list = [sun; targetecef1; targetecef2]
+    # target_list = [sun; targetecef1; targetecef2]
+
+    gss = OpenSOAP.load_mission("config/targets/groundstations.yaml", GroundTarget)
+    target_list = [sun; gss...]
     return target_list
 end
 
@@ -66,7 +69,7 @@ function setup_parameters()::LEOSimulation
     start_time_jd = SatelliteToolboxTransformations.date_to_jd(2027, 11, 28, 0, 25, 0)
     start_time_s = start_time_jd * 3600 * 24
     # duration_s = 3600*24*365
-    duration_s = 3600*24*365
+    duration_s = 3600*24*1
     tspan = [start_time_s, start_time_s + duration_s]
     dt_s = 60
 
@@ -165,7 +168,7 @@ function plot_main()
     sim = setup_parameters()
     soln = run_orbit(sim)
     n_t = length(soln["time"])
-    save_power(soln)
+    # save_power(soln)
 
     # plotting
     println("plotting...")
@@ -264,14 +267,15 @@ function plot_main()
 
     fig[2,5] = Legend(fig, visible_ax, "Visibility", framevisible = false)
     linkxaxes!(detail_ax, visible_ax, power_ax, data_ax)
-   
+
     on(play_button.clicks, priority=1) do n
         if play_button.label == "play"
             
         else
             play_button.label = "stop"
             frame_rate = 60
-            @async for i in 1:1000:n_t
+            step = Int64(round(n_t / 100)) + 1
+            @async for i in 1:step:n_t
                 Makie.set_close_to!(time_sliders.sliders[1], i)
                 sleep(1/frame_rate)
             end

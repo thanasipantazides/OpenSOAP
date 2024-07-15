@@ -224,27 +224,35 @@ function plot_targets!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, t_jd
         C_IF_r = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/24/3600, eops)
         C_IF = Matrix(C_IF_r)
 
+        height = 0.05
+
         nθ = 20
         nζ = 2
         θ = range(0, stop=2π, length=nθ)
-        ζ = range(0, stop=6371e3*0.25, length=nζ)
+        ζ = range(0, stop=r_E*height, length=nζ)
         
         mesh_X = zeros(nθ, nζ, length(ground_targets))
         mesh_Y = zeros(nθ, nζ, length(ground_targets))
         mesh_Z = zeros(nθ, nζ, length(ground_targets))
         # for (k, target) in ground_targets
-        for k in 1:length(ground_targets)
+        for k in eachindex(ground_targets)
             # first draw cone z-up
             # then transform to align with zenith-up at target.position
             target = ground_targets[k]
             b = tan(target.cone)
-            C_FT = r_min_arc([0;0;1], Vector(position_ecef(target, t_jd_s)))
+            pos_F = Vector(position_ecef(target, t_jd_s))
+            C_FT = r_min_arc([0;0;1], pos_F / norm(pos_F))
 
             # note: currently, this ignores FixedFrameTarget.direction
             for i in 1:nθ
                 for j in 1:nζ
                     # a point in the mesh
-                    p = C_IF*(C_FT*[b*cos(θ[i])*ζ[j]; b*sin(θ[i])*ζ[j]; ζ[j]] + position_ecef(target, t_jd_s))
+                    p_T = [
+                        b*cos(θ[i])*ζ[j]; 
+                        b*sin(θ[i])*ζ[j]; 
+                        ζ[j]
+                    ]
+                    p = C_IF*(C_FT*p_T) + position_eci(target, t_jd_s)
                     mesh_X[i,j,k] = p[1]
                     mesh_Y[i,j,k] = p[2]
                     mesh_Z[i,j,k] = p[3]

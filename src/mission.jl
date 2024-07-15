@@ -1,6 +1,6 @@
 import Base.@kwdef
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
-using LinearAlgebra
+using LinearAlgebra, Statistics
 
 @kwdef struct EarthProperties
     mu::Real
