@@ -36,7 +36,7 @@ spacecraft:
       - 
         normal:     [0, 0, -1]
         efficiency: 0.295   
-        area:       0.1206  # m
+        area:       0.12072  # m
   
   data_properties:
     capacity:         64e9    # bytes

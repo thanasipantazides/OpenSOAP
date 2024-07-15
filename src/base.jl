@@ -26,3 +26,11 @@ function r_min_arc(x_A::Vector{<:Real}, x_B::Vector{<:Real})::Matrix{<:Real}
 
     return I*cang + (1 - cang)ax*ax' + cross(ax)*sqrt(1 - cang^2)
 end
+
+function r_random()::Matrix{<:Real}
+    ax = rand(3)
+    ax = ax/norm(ax)
+    cang = 2*rand() - 1
+
+    return I*cang + (1 - cang)ax*ax' + cross(ax)*sqrt(1 - cang^2)
+end

@@ -1,4 +1,5 @@
 using GLMakie, LinearAlgebra
+import CairoMakie
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
 using OpenSOAP
 
@@ -8,13 +9,17 @@ using OpenSOAP
 Construct an array of solar panels for the spacecraft.
 """
 function make_solar_panels()::Vector{SolarPanel}
-    pxf = SolarPanel([1.0;0;0], 0.295, 0.005*4)
-    pxb = SolarPanel([-1.0;0;0], 0.295, 0.005*4)
-    pyf = SolarPanel([0.0;1;0], 0.295, 0.005*6)
-    pyb = SolarPanel([0.0;-1;0], 0.295, 0.005*6)
-    pzf = SolarPanel([0.0;0;1], 0.295, 0.005*12)
-    pzb = SolarPanel([0.0;0;-1], 0.295, 0.005*12)
-    return [pxf; pxb; pyf; pyb; pzf; pzb]
+    # pxf = SolarPanel([1.0;0;0], 0.295, 0.005*4)
+    # pxb = SolarPanel([-1.0;0;0], 0.295, 0.005*4)
+    # pyf = SolarPanel([0.0;1;0], 0.295, 0.005*6)
+    # pyb = SolarPanel([0.0;-1;0], 0.295, 0.005*6)
+    # pzf = SolarPanel([0.0;0;1], 0.295, 0.005*12)
+    # pzb = SolarPanel([0.0;0;-1], 0.295, 0.005*12)
+
+    # return [pxf; pxb; pyf; pyb; pzf; pzb]
+    # pzb = SolarPanel([0.0;0;-1], 0.295, 0.003018*40)
+    pzb = SolarPanel([0.0;0;-1], 0.295, 0.003018*40)
+    return [pzb]
 end
 
 @doc raw"""
@@ -60,20 +65,27 @@ function setup_parameters()::LEOSimulation
 
     start_time_jd = SatelliteToolboxTransformations.date_to_jd(2027, 11, 28, 0, 25, 0)
     start_time_s = start_time_jd * 3600 * 24
-    duration_s = 3600*100
+    # duration_s = 3600*24*365
+    duration_s = 3600*24*365
     tspan = [start_time_s, start_time_s + duration_s]
-    dt_s = 1
+    dt_s = 60
 
     inc = 70*pi/180
-    r0 = [earth_data.r+550e3; 0; 0]
+    r0 = [earth_data.r+400e3; 0; 0]
     v0m = sqrt(earth_data.mu/norm(r0))
     v0 = 1.0*[0; v0m*cos(inc); v0m*sin(inc)]
     w0 = [1;1;1]*1e-2
     C_BI0 = diagm([1;1;1])
     E0 = 40*3600
     S0 = 16*8e9
+    M0 = 1
+    # modes:
+    #   1: safe
+    #   2: charging
+    #   3: downlink
+    #   4: science
 
-    x0 = [r0;v0;w0;vec(C_BI0);E0;S0]
+    x0 = [r0;v0;w0;vec(C_BI0);E0;S0;M0]
 
     targets = make_targets()
 
@@ -82,8 +94,8 @@ function setup_parameters()::LEOSimulation
         diagm([2;1;4])*1e-3
     )
     power_data = PowerProperties(
-        84*60*60,   # Whr to J
-        10,         # W
+        84*60*60.0,   # Whr to J
+        0.1*13.725,         # W
         make_solar_panels()
     )
     data_data = DataProperties(
@@ -113,7 +125,7 @@ function setup_parameters()::LEOSimulation
     return leo_sim
 end
 
-@raw doc"""
+@doc raw"""
     run_orbit(sim::LEOSimulation)
 
 Perform numerical integration of simulation problem defined in `LEOSimulation` structure, and return `soln::Dict` with solution data (keys `"time"`, a time history; and `"state"`, a state vector history).
@@ -121,6 +133,28 @@ Perform numerical integration of simulation problem defined in `LEOSimulation` s
 function run_orbit(sim::LEOSimulation)
     soln = integrate_system(dynamics_orbit!, sim.initstate, sim.tspan, sim.dt, sim)
     return soln
+end
+
+function save_power(soln)
+    
+    CairoMakie.activate!(type="png")
+    set_theme!(theme_light())
+    fig = Figure()
+    ax1 = Axis(
+        fig[1,1],
+        title = "Battery capacity history",
+        xlabel = "Time [days]",
+        ylabel = "Battery capacity [Wh]"
+    )
+    ax2 = Axis(
+        fig[2,1],
+        title = "Mode history",
+        xlabel = "Time [days]",
+        ylabel = "Mode"
+    )
+    lines!(ax1, (soln["time"] .- soln["time"][1])/24/3600, soln["state"][19,:]/3600)
+    lines!(ax2, (soln["time"] .- soln["time"][1])/24/3600, soln["state"][21,:])
+    save("test_fig.pdf", fig)
 end
 
 function plot_main()
@@ -131,6 +165,7 @@ function plot_main()
     sim = setup_parameters()
     soln = run_orbit(sim)
     n_t = length(soln["time"])
+    save_power(soln)
 
     # plotting
     println("plotting...")
@@ -209,6 +244,8 @@ function plot_main()
         xlabel="Time [s]", 
         ylabel="Storage [MB]"
     )
+
+    mission_stats(soln, visibilities, sim)
     
     # load Earth texture (these are all equirectangular projection/plate carreé):
     texture = load_earth_texture_to_ecef("assets/map_diffuse.png")
