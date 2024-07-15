@@ -1,6 +1,7 @@
 module OpenSOAP
 
 include("base.jl")
+include("io.jl")
 include("target.jl")
 include("mission.jl")
 
@@ -9,6 +10,7 @@ include("dynamics.jl")
 include("visualize.jl")
 
 export LEOSimulation, EarthProperties, Mission, SpacecraftProperties, PowerProperties, DataProperties, MassProperties, SolarPanel, Antenna, AbstractTarget, SunTarget, GroundTarget#, FrameFixedTarget
+export load_mission
 export cross, r_min_arc, r_random
 export can_see_sun, can_see_gnd
 export ECI, ECEF, ICRS, visibility_history, position_eci, position_ecef
