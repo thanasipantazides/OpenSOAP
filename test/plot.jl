@@ -30,7 +30,7 @@ Construct a list of target objects for pointing.
 function make_targets()
     eops = SatelliteToolboxTransformations.fetch_iers_eop()
     sun = SunTarget(
-        "sun",
+        "Sun",
         eops
     )
 
@@ -104,7 +104,7 @@ function setup_parameters()::LEOSimulation
     data_data = DataProperties(
         capacity=8*64e9,     # b
         production=1e6,        # bps
-        transmit=20e6        # bps
+        transmit=10e6        # bps
     )
     spacecraft_data = SpacecraftProperties(
         "impax",
@@ -164,8 +164,8 @@ function plot_main()
     println("loading transformations...")
     eops = SatelliteToolboxTransformations.fetch_iers_eop()
     # compute orbit
-    println("integrating...")
     sim = setup_parameters()
+    println("integrating...")
     soln = run_orbit(sim)
     n_t = length(soln["time"])
     # save_power(soln)
@@ -178,14 +178,16 @@ function plot_main()
     display(fig)
     
     # make observable slider:
-    time_sliders = SliderGrid(fig[5, 1:3], (label = "time", format = "{:d}", range = 1:1:n_t, startvalue = 1))
+    time_sliders = SliderGrid(fig[6, 2], (label = "time", format = "{:d}", range = 1:1:n_t, startvalue = 1))
     slider_observables = [s.value for s in time_sliders.sliders]
     
     t_jd_s = lift(slider_observables[1]) do t_i
         return soln["time"][t_i]
     end
 
-    play_button = Button(fig[5,5], label="play")
+    play_button = Button(fig[6,5], label="play")
+    back_button = Button(fig[6,1], label="<<")
+    fwrd_button = Button(fig[6,3], label=">>")
 
     # lighting position of sun:
     sun_light = lift(t_jd_s) do t_jd_s
@@ -208,7 +210,7 @@ function plot_main()
 
     # start main scene:
     ax = LScene(
-        fig[1:4,1:3], 
+        fig[1:5,1:3], 
         show_axis=false, 
         scenekw=(lights=[dl, al], 
         backgroundcolor=:black, 
@@ -216,7 +218,7 @@ function plot_main()
     )
     # populate auxiliary axes:
     detail_ax = Axis(
-        fig[1,4], 
+        fig[5,4], 
         backgroundcolor=:black, 
         limits=(0, soln["time"][end] - soln["time"][1], -0.2, 0.2), 
         title="Angular rates in body frame", 
@@ -227,15 +229,23 @@ function plot_main()
         fig[2,4],
         backgroundcolor=:black, 
         limits=(0, soln["time"][end] - soln["time"][1], 0, length(visibilities)), 
-        title="Target visibility", 
+        # title="Target visibility", 
         xlabel="Time [s]", 
         ylabel="Visible?"
+    )
+    mode_ax = Axis(
+        fig[1,4],
+        backgroundcolor=:black, 
+        limits=(0, soln["time"][end] - soln["time"][1], 0, 1),
+        # title="Mode", 
+        xlabel="Time [s]", 
+        ylabel="Mode"
     )
     power_ax = Axis(
         fig[3,4],
         backgroundcolor=:black, 
         limits=(0, soln["time"][end] - soln["time"][1], 0, sim.mission.spacecraft.power.capacity/3600), 
-        title="Power", 
+        # title="Power", 
         xlabel="Time [s]", 
         ylabel="Battery capacity [Wh]"
     )
@@ -243,10 +253,10 @@ function plot_main()
         fig[4,4],
         backgroundcolor=:black, 
         limits=(0, soln["time"][end] - soln["time"][1], 0, sim.mission.spacecraft.data.capacity/8e6),
-        title="Data [PLACEHOLDER]", 
+        # title="Data", 
         xlabel="Time [s]", 
-        ylabel="Storage [MB]"
-    )
+        ylabel="Data storage [MB]"
+    )    
 
     mission_stats(soln, visibilities, sim)
     
@@ -264,10 +274,30 @@ function plot_main()
     plot_visibilities!(visible_ax, t_jd_s, visibilities, soln)
     plot_power!(power_ax, t_jd_s, visibilities, soln)
     plot_data!(data_ax, t_jd_s, visibilities, soln)
+    plot_mode!(mode_ax, t_jd_s, visibilities, soln)
 
-    fig[2,5] = Legend(fig, visible_ax, "Visibility", framevisible = false)
-    linkxaxes!(detail_ax, visible_ax, power_ax, data_ax)
+    fig[2:5,5] = Legend(fig, visible_ax, "Visibility", framevisible = false, labelsize=10.0, patchsize=(20.0f0, 10.0f0), valign=:top, halign=:left)
+    fig[1,5] = Legend(fig, mode_ax, "Mode", framevisible = false, labelsize=10.0, patchsize=(20.0f0, 10.0f0), halign=:left)
+    linkxaxes!(detail_ax, visible_ax, power_ax, data_ax, mode_ax)
+    hidexdecorations!(visible_ax, grid=false, ticks=false)
+    hideydecorations!(visible_ax, label=false)
+    hidexdecorations!(mode_ax, grid=false, ticks=false)
+    hideydecorations!(mode_ax, label=false)
+    hidexdecorations!(power_ax, grid=false, ticks=false)
 
+    # callback for back arrow
+    on(back_button.clicks, priority=2) do n
+        slider_pos = slider_observables[1][] - 1
+        Makie.set_close_to!(time_sliders.sliders[1], slider_pos)
+    end
+
+    # callback for forward arrow
+    on(fwrd_button.clicks, priority=2) do n
+        slider_pos = slider_observables[1][] + 1
+        Makie.set_close_to!(time_sliders.sliders[1], slider_pos)
+    end
+    
+    # callback for play button
     on(play_button.clicks, priority=1) do n
         if play_button.label == "play"
             

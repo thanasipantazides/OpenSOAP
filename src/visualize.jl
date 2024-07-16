@@ -2,6 +2,59 @@ using GLMakie, Colors, GeometryBasics, LinearAlgebra
 using SatelliteToolboxBase, SatelliteToolboxTransformations
 using FileIO
 
+function plot_mode!(ax::Makie.Axis, t_jd_s, target_histories::Dict, soln::Dict)
+    playhead = lift(t_jd_s) do t_jd_s
+        t_0 = soln["time"][1]
+        return t_jd_s - t_0
+    end
+    
+    names = ["safe", "power", "downlink", "science"]
+    n_modes = Int64(max(soln["state"][21,:]...) - min(soln["state"][21,:]...))
+    m_hist = zeros(Int64, 1+n_modes, length(soln["state"][21,:]))
+    for i = 1:length(soln["time"])
+        m_hist[Int64(soln["state"][21,i]),i] = 1
+    end
+    t_0 = soln["time"][1]
+
+    for i in 1:n_modes+1
+        change = diff(m_hist[i,:])
+        starts = findall(i->(i > 0), change)
+        stops = findall(i->(i < 0), change)
+        if m_hist[i,1] == 1
+            # starts = [1; starts]
+        end
+        if stops[1] == 1
+            stops = stops[2:end]
+        end
+        
+        if length(starts) == 0 && length(stops) == 0
+            println("found no contacts for key!")
+            continue
+        end
+
+        plotval = [Rect(soln["time"][starts[j]] - t_0, 0, soln["time"][stops[j] - 1] - soln["time"][starts[j]], 1) for j in 1:min(length(starts), length(stops))]
+
+        poly!(
+            ax,
+            plotval,
+            alpha=1.0,
+            strokewidth=0.1,
+            # strokecolor=:white,
+            label=names[i]
+        )
+        println(names[i])
+
+    end
+    
+    vlines!(
+        ax,
+        playhead,
+        color=:yellow,
+        alpha=0.7,
+        linewidth=1
+    )
+end
+
 function plot_power!(ax::Makie.Axis, t_jd_s, target_histories::Dict, soln::Dict)
     playhead = lift(t_jd_s) do t_jd_s
         t_0 = soln["time"][1]
@@ -290,16 +343,15 @@ function plot_targets!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, t_jd
     end
 
     for i in 1:length(sun_targets)
-        if sun_targets[i].name == "sun"
-            arrows!(
-                ax,
-                sun_root,
-                sun_pos,
-                color=:yellow,
-                linewidth=arrow_scale*r_E,
-                arrowsize=Vec3f(arrow_scale*r_E, arrow_scale*r_E, arrow_scale*3*r_E)
-            )
-        end
+        arrows!(
+            ax,
+            sun_root,
+            sun_pos,
+            color=:yellow,
+            linewidth=arrow_scale*r_E,
+            arrowsize=Vec3f(arrow_scale*r_E, arrow_scale*r_E, arrow_scale*3*r_E)
+        )
+        break
     end
 end
 

@@ -15,7 +15,7 @@ export cross, r_min_arc, r_random
 export can_see_sun, can_see_gnd
 export ECI, ECEF, ICRS, visibility_history, position_eci, position_ecef
 export integrate_system, dynamics_orbit!
-export plot!, plot_earth!, plot_spacecraft!, plot_targets!, plot_detail!, plot_visibilities!, plot_power!, plot_data!, load_earth_texture_to_ecef
+export plot!, plot_earth!, plot_spacecraft!, plot_targets!, plot_detail!, plot_visibilities!, plot_power!, plot_data!, plot_mode!, load_earth_texture_to_ecef
 export mission_stats
 
 greet() = print("Hello World!")
