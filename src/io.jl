@@ -4,7 +4,6 @@ function load_mission(file::String, type::Type)
 
     data = YAML.load_file(file)
     println("\nloading ", length(data), " target records...")
-    println(typeof(data))
 
     if type === GroundTarget
         eops = SatelliteToolboxTransformations.fetch_iers_eop()

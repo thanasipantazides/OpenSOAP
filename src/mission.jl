@@ -1,6 +1,6 @@
 import Base.@kwdef
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
-using LinearAlgebra, Statistics
+using LinearAlgebra, Statistics, Printf
 
 @kwdef struct EarthProperties
     mu::Real
@@ -91,7 +91,12 @@ function mission_stats(soln::Dict, target_histories::Dict, params)
     printstyled("\nDisplaying mission statistics\n", bold=true)
     period = 2*π*sqrt(norm(soln["state"][1:3,1])^3/SatelliteToolboxBase.GM_EARTH)
 
-    println("Mean observing time fraction for target:")
+    println("Mean observing fraction per orbit for target:")
+
+    total_gs_passes = 0
+    suntarget_i = findfirst(target -> typeof(target) === SunTarget, params.mission.targets)
+    suntarget = params.mission.targets[suntarget_i]
+    println(suntarget)
     for (key, val) in target_histories
         change = diff(val)
         starts = findall(i->(i > 0), change)
@@ -104,34 +109,63 @@ function mission_stats(soln::Dict, target_histories::Dict, params)
             continue
         end
         durations = [soln["time"][stops[i]] - soln["time"][starts[i]] for i in 1:min(length(starts), length(stops))]
-        println("\t- ", key, ":\t", Statistics.mean(durations)/period)
+        # println("\t- ", key, ":\t", Statistics.mean(durations)/period)
+        @printf "\t- %s:\t%.3f\n" key Statistics.mean(durations)/period
+        
+        if key != suntarget.name
+            total_gs_passes += min(length(starts), length(stops))
+        end
     end
 
+    in_safe = zeros(length(soln["time"]))
+    in_power = zeros(length(soln["time"]))
+    # in_sun_no_science = zeros(length(soln["time"]))
+    in_downlink = zeros(length(soln["time"]))
     in_science = zeros(length(soln["time"]))
-    in_sun_no_science = zeros(length(soln["time"]))
     power = zeros(length(soln["time"]))
+    data = zeros(length(soln["time"]))
     power_counter = 0
-    for i in 1:length(soln["time"])
-        pos_I = soln["state"][1:3,i]
-        pos_F = SatelliteToolboxTransformations.r_eci_to_ecef(J2000(), ITRF(), soln["time"][i]/3600/24, params.mission.targets[1].iers_eops)*pos_I
-        lla = SatelliteToolboxTransformations.ecef_to_geocentric(pos_F)[:]
-        latitude = lla[1]
-        if abs(latitude) >= 35*pi/180 && abs(latitude) <= 70*pi/180
+    data_counter = 0
+
+    for i in eachindex(soln["time"])
+        if soln["state"][21,i] == 1
+            in_safe[i] = true
+        elseif soln["state"][21,i] == 2
+            in_power[i] = true
+        elseif soln["state"][21,i] == 3
+            in_downlink[i] = true
+        elseif soln["state"][21,i] == 4
             in_science[i] = true
         else
-            if target_histories["sun"][i] == 1.0
-                in_sun_no_science[i] = true
-            end
+            println("got unknown state!")
         end
         if i > 1
             if soln["state"][19,i] - soln["state"][19,i - 1] != 0
                 power[i] = (soln["state"][19,i] - soln["state"][19,i - 1])/(soln["time"][i] - soln["time"][i - 1])
                 power_counter += 1
             end
+            if soln["state"][20,i] - soln["state"][20,i - 1] != 0
+                data[i] = (soln["state"][20,i] - soln["state"][20,i - 1])/(soln["time"][i] - soln["time"][i - 1])
+                data_counter += 1
+            end
         end
     end
-    println("Mean time fraction in science latitudes:\t", sum(in_science)/length(in_science))
-    println("Mean time fraction in sun w/o science:\t", sum(in_sun_no_science)/length(in_sun_no_science))
-    println("Mean power:\t", sum(power)/power_counter)
+
+    printstyled("\nMean time fraction per state:\n", bold=true)
+    # println("\tscience:\t",     sum(in_science)/length(in_science))
+    # println("\tpower:\t\t",       sum(in_power)/length(in_power))
+    # println("\tdownlink:\t",    sum(in_downlink)/length(in_downlink))
+    # println("\tsafe:\t\t",        sum(in_safe)/length(in_safe))
+    # println("Mean net power:\t", sum(power)/power_counter)
+    # println("Mean net data:\t", sum(data)/data_counter)
+
+    @printf "\tscience:\t%.3f\n"      sum(in_science)/length(in_science)
+    @printf "\tpower:\t\t%.3f\n"      sum(in_power)/length(in_power)
+    @printf "\tdownlink:\t%.3f\n"     sum(in_downlink)/length(in_downlink)
+    @printf "\tsafe:\t\t%.3f\n"       sum(in_safe)/length(in_safe)
+    @printf "Net power:\t\t%.3f W\n" sum(power)/power_counter
+    @printf "Net data:\t\t%.3f kbps\n"  sum(data)/data_counter/1e3
+    @printf "Ground passes per day:\t%.6f\n"  total_gs_passes/(soln["time"][end] - soln["time"][1])*3600*24
+
     println()
 end
