@@ -116,10 +116,11 @@ function dynamics_orbit!(dx::Vector{<:Real}, x::Vector{<:Real}, t::Real, params)
             end
         end
     end
-    lookup_consumption = [5.96; 6.09; 8.38; 22.73]
+    lookup_power_consumption = [5.96; 6.09; 8.38; 22.73]
+    lookup_data_generation = [1e2; 1e3; 1e4; 4e6]
     # lookup_consumption = [5.96; 6.09; 8.38; 17.23]
     # dx[19] = total_power - params.mission.spacecraft.power.consumption
-    dx[19] = total_power - lookup_consumption[Int64(x[21])]
+    dx[19] = total_power - lookup_power_consumption[Int64(x[21])]
 
     # accumulate downlink data for all ground station contacts
     total_data = 0
@@ -130,7 +131,8 @@ function dynamics_orbit!(dx::Vector{<:Real}, x::Vector{<:Real}, t::Real, params)
             end
         end
     end
-    dx[20] = params.mission.spacecraft.data.production - total_data
+    # dx[20] = params.mission.spacecraft.data.production - total_data
+    dx[20] = lookup_data_generation[Int64(x[21])] - total_data
 end
 
 function do_impax_conop!(x::Vector{<:Real}, t::Real, params)
@@ -165,6 +167,7 @@ function do_impax_conop!(x::Vector{<:Real}, t::Real, params)
                 x[21] = 3
                 gnd_I = pos_I - position_eci(target, t)
                 new_C_BI = r_min_arc([0;0;-1], C_BI*Vector(gnd_I/norm(gnd_I)))'*C_BI
+                # just target the first groundstation you find
                 break
             end
         end
