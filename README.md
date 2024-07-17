@@ -36,8 +36,8 @@ And detail 2D plots:
 - scroll + `X` key to zoom x-axis only
 - scroll + `Y` key to zoom y-axis only
 - ctrl + left-click on plot to reset view
-- 
-There is a scrollbar along the bottom to advance time.
+
+There is a scrollbar along the bottom to advance time. The neighboring arrow buttons increment/decrement timestep.
 
 ### An example display:
 ![mission simulation](assets/example_screenshot.png?raw=true)
