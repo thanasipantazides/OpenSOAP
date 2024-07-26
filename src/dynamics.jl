@@ -116,9 +116,9 @@ function dynamics_orbit!(dx::Vector{<:Real}, x::Vector{<:Real}, t::Real, params)
             end
         end
     end
-    lookup_power_consumption = [5.96; 6.09; 8.38; 22.73]
-    lookup_data_generation = [1e2; 1e3; 1e4; 4e6]
-    # lookup_consumption = [5.96; 6.09; 8.38; 17.23]
+    # lookup_power_consumption = [5.96; 6.09; 8.38; 22.73]
+    lookup_data_generation = [3.54e4; 3.54e4; 3.54e4; 3.54e4]
+    lookup_power_consumption = [5.96; 6.09; 8.38; 17.23]
     # dx[19] = total_power - params.mission.spacecraft.power.consumption
     dx[19] = total_power - lookup_power_consumption[Int64(x[21])]
 
@@ -128,6 +128,7 @@ function dynamics_orbit!(dx::Vector{<:Real}, x::Vector{<:Real}, t::Real, params)
         if typeof(target) == GroundTarget
             if can_see_groundtarget(x, t, target, params)
                 total_data += params.mission.spacecraft.data.transmit
+                break;
             end
         end
     end

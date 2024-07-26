@@ -10,7 +10,7 @@ include("dynamics.jl")
 include("visualize.jl")
 
 export LEOSimulation, EarthProperties, Mission, SpacecraftProperties, PowerProperties, DataProperties, MassProperties, SolarPanel, Antenna, AbstractTarget, SunTarget, GroundTarget#, FrameFixedTarget
-export load_mission
+export load_mission, load_groundstations, load_spacecraft, load_simulation
 export cross, r_min_arc, r_random
 export can_see_sun, can_see_gnd
 export ECI, ECEF, ICRS, visibility_history, position_eci, position_ecef

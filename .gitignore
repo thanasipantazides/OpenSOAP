@@ -15,3 +15,4 @@ docs/site/
 assets/*
 !assets/map_diffuse.png
 !assets/example_screenshot.png
+cases/*

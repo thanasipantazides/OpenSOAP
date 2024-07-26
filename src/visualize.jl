@@ -42,8 +42,6 @@ function plot_mode!(ax::Makie.Axis, t_jd_s, target_histories::Dict, soln::Dict)
             # strokecolor=:white,
             label=names[i]
         )
-        println(names[i])
-
     end
     
     vlines!(
@@ -250,7 +248,7 @@ function plot_spacecraft!(ax::Makie.LScene, t_jd_s, tail_length::Integer, soln::
     )
 end
 
-function plot_targets!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, t_jd_s, eops)
+function plot_targets!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, t_jd_s, soln, eops)
     r_E = EARTH_EQUATORIAL_RADIUS
     arrow_scale = 0.01
     axis_scale = 2
@@ -273,53 +271,107 @@ function plot_targets!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, t_jd
         return [Point3f([0;0;0])]
     end
 
-    cone_meshes = lift(t_jd_s) do t_jd_s
+    circles = lift(t_jd_s) do t_jd_s
         C_IF_r = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/24/3600, eops)
         C_IF = Matrix(C_IF_r)
 
-        height = 0.05
-
-        nθ = 20
-        nζ = 2
-        θ = range(0, stop=2π, length=nθ)
-        ζ = range(0, stop=r_E*height, length=nζ)
+        # assume circular orbit:
+        r_S = norm(soln["state"][1:3,1])
         
-        mesh_X = zeros(nθ, nζ, length(ground_targets))
-        mesh_Y = zeros(nθ, nζ, length(ground_targets))
-        mesh_Z = zeros(nθ, nζ, length(ground_targets))
-        # for (k, target) in ground_targets
+
+        nθ = 24
+        θ = range(0, stop=2π, length=nθ)
+        X = zeros(nθ, length(ground_targets))
+        Y = zeros(nθ, length(ground_targets))
+        Z = zeros(nθ, length(ground_targets))
         for k in eachindex(ground_targets)
             # first draw cone z-up
             # then transform to align with zenith-up at target.position
             target = ground_targets[k]
-            b = tan(target.cone)
+            α = π - target.cone
+            β = π - target.cone - π/2
+            γ = asin(r_E/r_S*sin(α))
+            r_circle = r_S*cos(γ + β)   # radius of gs cone's circle projected onto sphere of orbit
+            δ = r_circle*tan(β)
+
             pos_F = Vector(position_ecef(target, t_jd_s))
             C_FT = r_min_arc([0;0;1], pos_F / norm(pos_F))
 
-            # note: currently, this ignores FixedFrameTarget.direction
+            c_F = pos_F + (1+δ)*pos_F/norm(pos_F)  # center of gs cone's circle projected onto sphere of orbit
+
             for i in 1:nθ
-                for j in 1:nζ
-                    # a point in the mesh
-                    p_T = [
-                        b*cos(θ[i])*ζ[j]; 
-                        b*sin(θ[i])*ζ[j]; 
-                        ζ[j]
-                    ]
-                    p = C_IF*(C_FT*p_T) + position_eci(target, t_jd_s)
-                    mesh_X[i,j,k] = p[1]
-                    mesh_Y[i,j,k] = p[2]
-                    mesh_Z[i,j,k] = p[3]
-                end
+                p_T = r_circle .* [
+                    cos(θ[i]);
+                    sin(θ[i]);
+                    0
+                ]
+                p = C_IF*(C_FT*p_T) + C_IF*c_F
+                # p = C_IF*(C_FT*p_T) + position_eci(target, t_jd_s)
+                X[i,k] = p[1]
+                Y[i,k] = p[2]
+                Z[i,k] = p[3]
             end
         end
-        return (mesh_X, mesh_Y, mesh_Z)
+        return (X, Y, Z)
     end
 
-    meshs = Matrix{Observable{Matrix{Float64}}}(undef, 3,length(targets))
+    # mesh for whole cone
+    # cone_meshes = lift(t_jd_s) do t_jd_s
+    #     C_IF_r = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/24/3600, eops)
+    #     C_IF = Matrix(C_IF_r)
+
+    #     height = 0.05
+
+    #     nθ = 20
+    #     nζ = 2
+    #     θ = range(0, stop=2π, length=nθ)
+    #     ζ = range(0, stop=r_E*height, length=nζ)
+        
+    #     mesh_X = zeros(nθ, nζ, length(ground_targets))
+    #     mesh_Y = zeros(nθ, nζ, length(ground_targets))
+    #     mesh_Z = zeros(nθ, nζ, length(ground_targets))
+    #     # for (k, target) in ground_targets
+    #     for k in eachindex(ground_targets)
+    #         # first draw cone z-up
+    #         # then transform to align with zenith-up at target.position
+    #         target = ground_targets[k]
+    #         b = tan(target.cone)
+    #         pos_F = Vector(position_ecef(target, t_jd_s))
+    #         C_FT = r_min_arc([0;0;1], pos_F / norm(pos_F))
+
+    #         # note: currently, this ignores FixedFrameTarget.direction
+    #         for i in 1:nθ
+    #             for j in 1:nζ
+    #                 # a point in the mesh
+    #                 p_T = [
+    #                     b*cos(θ[i])*ζ[j]; 
+    #                     b*sin(θ[i])*ζ[j]; 
+    #                     ζ[j]
+    #                 ]
+    #                 p = C_IF*(C_FT*p_T) + position_eci(target, t_jd_s)
+    #                 mesh_X[i,j,k] = p[1]
+    #                 mesh_Y[i,j,k] = p[2]
+    #                 mesh_Z[i,j,k] = p[3]
+    #             end
+    #         end
+    #     end
+    #     return (mesh_X, mesh_Y, mesh_Z)
+    # end
+
+    # meshs = Matrix{Observable{Matrix{Float64}}}(undef, 3,length(targets))
+    # for i in 1:3
+    #     for j in 1:length(ground_targets)
+    #         meshs[i,j] = lift(cone_meshes) do globe_mesh
+    #             return globe_mesh[i][:,:,j]
+    #         end
+    #     end
+    # end
+
+    gs_lines = Matrix{Observable{Vector{Float64}}}(undef, 3, length(targets))
     for i in 1:3
-        for j in 1:length(ground_targets)
-            meshs[i,j] = lift(cone_meshes) do globe_mesh
-                return globe_mesh[i][:,:,j]
+        for k in 1:length(ground_targets)
+            gs_lines[i,k] = lift(circles) do cone_circle
+                return cone_circle[i][:,k]
             end
         end
     end
@@ -332,13 +384,20 @@ function plot_targets!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, t_jd
     )
 
     for i in 1:length(ground_targets)
-        surface!(
+        # surface!(
+        #     ax,
+        #     meshs[1,i],
+        #     meshs[2,i],
+        #     meshs[3,i],
+        #     # color=:lightgreen,
+        #     color=fill((:lightgreen,0.33),20,2)
+        # )
+        lines!(
             ax,
-            meshs[1,i],
-            meshs[2,i],
-            meshs[3,i],
-            # color=:lightgreen,
-            color=fill((:lightgreen,0.33),20,2)
+            gs_lines[1,i],
+            gs_lines[2,i],
+            gs_lines[3,i],
+            color=:lightgreen
         )
     end
 
