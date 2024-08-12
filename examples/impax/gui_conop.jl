@@ -63,8 +63,8 @@ function main()
     end
 
     play_button = Button(fig[6,5], label="play")
-    back_button = Button(fig[6,1], label="<<")
-    fwrd_button = Button(fig[6,3], label=">>")
+    back_button = Button(fig[6,1], label="◀")
+    fwrd_button = Button(fig[6,3], label="▶")
 
     # lighting position of sun:
     sun_light = lift(t_jd_s) do t_jd_s
@@ -132,6 +132,7 @@ function main()
     set_theme!(theme_dark())
     
     plot_earth!(ax, t_jd_s, eops, texture)
+    plot_frames!(ax, t_jd_s, visibilities, soln, eops)
     plot_spacecraft!(ax, t_jd_s, 10000, soln)
     plot_targets!(ax, target_list, t_jd_s, soln, eops)
     plot_detail!(detail_ax, t_jd_s, soln)

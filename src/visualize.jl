@@ -194,13 +194,6 @@ function plot_detail!(ax::Makie.Axis, t_jd_s, soln::Dict)
 end
 
 function plot_spacecraft!(ax::Makie.LScene, t_jd_s, tail_length::Integer, soln::Dict)
-    r_E = EARTH_EQUATORIAL_RADIUS
-    arrow_scale = 0.01
-    axis_scale = 0.1
-
-    tail = zeros(3,3)
-    tip = diagm([1;1;1])*r_E*axis_scale
-    colors = [:red,:green,:blue]
 
     this_i = lift(t_jd_s) do t_jd_s
         (_,i) = findmin(x->abs(x - t_jd_s), soln["time"])
@@ -213,16 +206,6 @@ function plot_spacecraft!(ax::Makie.LScene, t_jd_s, tail_length::Integer, soln::
         first_i = this_i - tail_length
         start_i = max(first_i, 1)
         return Point3f[(soln["state"][1:3,j]) for j in start_i:this_i]
-    end
-    C_BI = lift(this_i) do this_i
-        C_BI_m = Matrix(reshape(soln["state"][10:18, this_i], (3,3)))
-        return C_BI_m
-    end
-    body_axes_heads = lift(C_BI) do C_BI
-        return [Vec3f(C_BI*tip[:,i]) for i in 1:3]
-    end
-    body_axes_tails = lift(pos) do pos
-        return [Point3f(pos[:,i]) for i in 1:3]
     end
     
     scatter!(
@@ -238,14 +221,7 @@ function plot_spacecraft!(ax::Makie.LScene, t_jd_s, tail_length::Integer, soln::
         linewidth=0.5,
         fxaa=true
     )
-    arrows!(
-        ax,
-        body_axes_tails,
-        body_axes_heads,
-        color=colors,
-        linewidth=arrow_scale*r_E,
-        arrowsize=Vec3f(arrow_scale*r_E, arrow_scale*r_E, arrow_scale*3*r_E)
-    )
+    
 end
 
 function plot_targets!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, t_jd_s, soln, eops)
@@ -418,37 +394,12 @@ function plot_earth!(ax::Makie.LScene, t_jd_s, iers_eops, texture_ecef)
     r_E = EARTH_EQUATORIAL_RADIUS
     r_P = EARTH_POLAR_RADIUS
     
-    arrow_scale = 0.025
-    axis_scale = 1.33
-
-    tail = zeros(3,3)
-    tip = diagm([1;1;1])*r_E*axis_scale
-    colors = [:red,:green,:blue]
-
     C_IF = lift(t_jd_s) do t_jd_s
         C_IF_r = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/24/3600, iers_eops)
         C_IF_m = Matrix(C_IF_r)
         # eci vector = C_IF * ecef vector 
         return C_IF_m
     end
-
-    ecef_axes_heads = lift(C_IF) do C_IF
-        return [Vec3f(C_IF*tip[:,i]) for i in 1:3]
-    end
-
-    ecef_axes_tails = lift(t_jd_s) do t_jd_s
-        return [Point3f(tail[:,i]) for i in 1:3]
-    end
-
-    # drawing axes:
-    arrows!(
-        ax,
-        ecef_axes_tails,
-        ecef_axes_heads,
-        color=colors,
-        linewidth=arrow_scale*r_E,
-        arrowsize=Vec3f(arrow_scale*r_E, arrow_scale*r_E, arrow_scale*3*r_E)
-    )
 
     # making surface texture:
     # nθ = 3600
@@ -492,6 +443,78 @@ function plot_earth!(ax::Makie.LScene, t_jd_s, iers_eops, texture_ecef)
         Z,
         color=texture_ecef,
         diffuse=0.8
+    )
+end
+
+function plot_frames!(ax::Makie.LScene, t_jd_s, target_histories::Dict, soln::Dict, eops)
+    r_E = EARTH_EQUATORIAL_RADIUS
+    r_P = EARTH_POLAR_RADIUS
+
+    body_arrow_scale = 0.01
+    body_axis_scale = 0.1
+
+    tail = zeros(3,3)
+    body_tip = diagm([1;1;1])*r_E*body_axis_scale
+    
+    ecef_arrow_scale = 0.025
+    ecef_axis_scale = 1.33
+
+    tail = zeros(3,3)
+    ecef_tip = diagm([1;1;1])*r_E*ecef_axis_scale
+    colors = [:red,:green,:blue]
+
+    this_i = lift(t_jd_s) do t_jd_s
+        (_,i) = findmin(x->abs(x - t_jd_s), soln["time"])
+        return i
+    end
+    pos = lift(this_i) do this_i
+        return Point3f(soln["state"][1:3,this_i])
+    end
+
+    C_BI = lift(this_i) do this_i
+        C_BI_m = Matrix(reshape(soln["state"][10:18, this_i], (3,3)))
+        return C_BI_m
+    end
+    body_axes_heads = lift(C_BI) do C_BI
+        return [Vec3f(C_BI*body_tip[:,i]) for i in 1:3]
+    end
+    body_axes_tails = lift(pos) do pos
+        return [Point3f(pos[:,i]) for i in 1:3]
+    end
+
+    C_IF = lift(t_jd_s) do t_jd_s
+        C_IF_r = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/24/3600, eops)
+        C_IF_m = Matrix(C_IF_r)
+        # eci vector = C_IF * ecef vector 
+        return C_IF_m
+    end
+
+    ecef_axes_heads = lift(C_IF) do C_IF
+        return [Vec3f(C_IF*ecef_tip[:,i]) for i in 1:3]
+    end
+
+    ecef_axes_tails = lift(t_jd_s) do t_jd_s
+        return [Point3f(tail[:,i]) for i in 1:3]
+    end
+
+    # drawing earth axes:
+    arrows!(
+        ax,
+        ecef_axes_tails,
+        ecef_axes_heads,
+        color=colors,
+        linewidth=ecef_arrow_scale*r_E,
+        arrowsize=Vec3f(ecef_arrow_scale*r_E, ecef_arrow_scale*r_E, ecef_arrow_scale*3*r_E)
+    )
+
+    # drawing spacecraft body frame
+    arrows!(
+        ax,
+        body_axes_tails,
+        body_axes_heads,
+        color=colors,
+        linewidth=body_arrow_scale*r_E,
+        arrowsize=Vec3f(body_arrow_scale*r_E, body_arrow_scale*r_E, body_arrow_scale*3*r_E)
     )
 end
 
