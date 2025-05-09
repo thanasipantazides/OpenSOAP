@@ -58,11 +58,32 @@ function load_spacecraft(file::String)
         bus_data["data"]["base_production"],
         bus_data["data"]["base_transmit"]
     )
+
+    wheels = Matrix{Float64}(undef, 3, 0)
+    for i in bus_data["attitude"]["wheel_axes"]
+        if length(i) == 3
+            wheels = hcat(wheels, i)
+        else
+            wheels = vcat(wheels, i)
+        end
+    end
+    if length(wheels[:,1]) != 3
+        wheels = wheels'
+    end
+    wheels = convert(Matrix{Float64}, wheels)
+    attitude_data = AttitudeProperties(
+        ReactionWheelProperties(
+            wheels,
+            bus_data["attitude"]["momenta"],
+            bus_data["attitude"]["torques"]
+        )
+    )
     spacecraft_data = SpacecraftProperties(
         bus_data["name"],
         power_data,
         data_data,
-        mass_data
+        mass_data,
+        attitude_data
     )
     return spacecraft_data
 end
@@ -86,10 +107,10 @@ function load_simulation(file::String)
     init_v = sim_data["initial"]["velocity"]
     init_E = sim_data["initial"]["battery"]
     init_S = sim_data["initial"]["storage"]
-    init_ω = zeros(3,1)
+    init_ω = sim_data["initial"]["ang_velocity"]
     init_C = diagm([1;1;1])
     init_m = 1.0
-    x0 = [init_r; init_v; init_ω...; init_C...; init_E; init_S; init_m]
+    x0 = Float64.([init_r; init_v; init_ω...; init_C...; init_E; init_S; init_m])
     result = Dict("start_time"=>start_jd_s, "duration"=>duration_s, "dt"=>dt_s, "initial"=>x0)
     return result
 end
