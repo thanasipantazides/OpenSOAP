@@ -1,5 +1,9 @@
-using SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
+using SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies, SatelliteToolboxGeomagneticField
 using LinearAlgebra
+
+const igrf_deg = 13
+# global _igrf_P = Matrix{Float64}(undef, igrf_deg + 1, igrf_deg + 1)
+# global _igrf_dP = similar(igrf_P)
 
 abstract type AbstractTarget end
 
@@ -19,6 +23,10 @@ struct CelestialTarget<:AbstractTarget
     eci::Vector{<:Real}
     iers_eops
 end
+struct MagneticTarget<:AbstractTarget
+    name::String
+    iers_eops
+end
 
 function position_eci(target::SunTarget, t_jd_s::Real)
     return SatelliteToolboxCelestialBodies.sun_position_mod(t_jd_s/3600/24)
@@ -36,6 +44,13 @@ end
 function position_ecef(target::GroundTarget, t_jd_s::Real)
     return Vector(geodetic_to_ecef(target.lla[1], target.lla[2], target.lla[3]))
 end
+function position_ecef(target::MagneticTarget, position_ecef::Vector{<:Real}, t_jd_s::Real)
+    pos_lla = ecef_to_geodetic(position_ecef)
+    field_ned = igrf(t_jd_s/3600/24/365.25 - 4712, pos_lla[3], pos_lla[1], pos_lla[2], Val(:geodetic), max_degree=13, show_warnings=false)
+    return Vector(ned_to_ecef(field_ned, pos_lla..., translate=false))
+end
+
+
 function Base.isequal(a::SunTarget, b::SunTarget)
     return a.name == b.name
 end
