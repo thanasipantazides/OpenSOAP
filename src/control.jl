@@ -15,7 +15,7 @@ function point_between(start_state::State{<:Real}, stop_state::State{<:Real}, dt
         set_silent(model)
     end
 
-    J = params.mission.spacecraft.mass.inertia
+    J = convert(Matrix{Float64}, params.mission.spacecraft.mass.inertia)
     Jinv = inv(J)
 
     # THIS IS FUDGED! Better way is to inscribe an ellipsoid in the agilitoid. Best way is just use the agilitoid.
@@ -34,7 +34,6 @@ function point_between(start_state::State{<:Real}, stop_state::State{<:Real}, dt
 
     # splat control bounds
     mlimmat = hcat([mlim for i in 1:n]...)
-    println(size(mlimmat))
 
     # optimization tolerances/limits
     psinf = 1e12
@@ -57,7 +56,7 @@ function point_between(start_state::State{<:Real}, stop_state::State{<:Real}, dt
     wlimmathi[:, n] .= wf
 
     # find reasonable initial guesses for decision variables
-    C_guess = rotinterp(C_BI0, C_BIf, length(1:n))
+    C_guess = rotinterp(C_BI0, C_BIf, n)
 
     # bounded control:
     @variable(model, u[i=1:3, k=1:n])
@@ -101,7 +100,6 @@ function point_between(start_state::State{<:Real}, stop_state::State{<:Real}, dt
     @constraints(model, begin
         [k = 1:n], 1.0 - so3_tol <= op_det_func(C_BI[:, :, k]) <= 1.0 + so3_tol
     end)
-    println("constraining dynamics")
 
     # dynamic constraints
     ddt_w(x::Matrix, k::Int) = (x[:, k] .- x[:, k-1]) ./ tstep

@@ -6,6 +6,97 @@ import MathOptInterface as MOI
 using GLMakie, GeometryBasics
 import Rotations
 
+function plot_slew_detail(C_hist, w_hist, u_hist)
+    GLMakie.activate!()
+    n = length(C_hist[1, 1, :])
+    t = 1:n
+    C_BIf = C_hist[:, :, n]
+    C_BI0 = C_hist[:, :, 1]
+    fig = Figure(size=(500, 500))
+    axu = Axis(
+        fig[2, 3],
+        xlabel="i",
+        ylabel="u"
+    )
+    axw = Axis(
+        fig[3, 3],
+        xlabel="i",
+        ylabel="w"
+    )
+    axc = Axis(
+        fig[1, 3],
+        xlabel="i",
+    )
+
+    axm = LScene(
+        fig[1:3, 1:2]
+    )
+
+    dethist = zeros(n)
+    trhist = zeros(n)
+    for i in t
+        dethist[i] = det(C_hist[:, :, i])
+        trhist[i] = sum(C_hist[:, :, i]' * C_hist[:, :, i]) .- 2
+    end
+
+    set_theme!(theme_light())
+    lines!(axu, t, u_hist[1, :])
+    lines!(axu, t, u_hist[2, :])
+    lines!(axu, t, u_hist[3, :])
+    scatter!(axw, t, w_hist[1, :])
+    scatter!(axw, t, w_hist[2, :])
+    scatter!(axw, t, w_hist[3, :])
+    scatter!(axc, t, dethist, label="determinant")
+    scatter!(axc, t, trhist, label="orthogonality")
+
+    basis = diagm([1.0, 1.0, 1.0])
+    cols = [:red, :green, :blue]
+
+    println("C_BI Z check max: ", max(C_hist[3, 3, :]...))
+    println("C_BI det min/max: ", min(dethist...), " / ", max(dethist...))
+    println("C_BI orth min/max: ", min(trhist...), " / ", max(trhist...))
+
+    for b in 1:3
+        for i in 1:10:n
+            c = RGBf(0, 0, 0)
+            if b == 1
+                c = RGBAf(1.0, 0.0, 0.0, i / n)
+            elseif b == 2
+                c = RGBAf(0.0, 1.0, 0.0, i / n)
+            elseif b == 3
+                c = RGBAf(0.0, 0.0, 1.0, i / n)
+            end
+            L = C_hist[:, :, i] * basis[:, b]
+            lines!(
+                axm,
+                [0, L[1]],
+                [0, L[2]],
+                [0, L[3]],
+                color=c
+            )
+        end
+        lines!(
+            axm,
+            [0, 1.2 * (C_BIf*basis[:, b])[1]],
+            [0, 1.2 * (C_BIf*basis[:, b])[2]],
+            [0, 1.2 * (C_BIf*basis[:, b])[3]],
+            linestyle=:solid,
+            color=cols[b]
+        )
+        lines!(
+            axm,
+            [0, 1.2 * (C_BI0*basis[:, b])[1]],
+            [0, 1.2 * (C_BI0*basis[:, b])[2]],
+            [0, 1.2 * (C_BI0*basis[:, b])[3]],
+            linestyle=:dash,
+            color=cols[b]
+        )
+    end
+
+    axislegend(axc)
+    display(fig)
+end
+
 # A working example to slew between an initial and target attitude, with zero'd angular rates at both boundaries.
 # Uses direct collocation.
 # Dynamic constraints, SO(3)-membership constraints, boundary conditions enforced.
@@ -285,6 +376,18 @@ function test_inner()
     sf = OpenSOAP.State{Float64}(zeros(3), zeros(3), wf, C_BIf, 0.0, 0.0, 0.0)
 
     states = OpenSOAP.point_between(s0, sf, 60, sim, true)
+    n = length(states)
+
+    C_hist = Array{Float64}(undef, 3, 3, n)
+    w_hist = Matrix{Float64}(undef, 3, n)
+    u_hist = Matrix{Float64}(undef, 3, n)
+    for k in 1:n
+        C_hist[:, :, k] = states[k].attitude
+        w_hist[:, k] = states[k].angular_velocity
+        u_hist[:, k] = zeros(3)
+    end
+
+    plot_slew_detail(C_hist, w_hist, u_hist)
 end
 
 function test_rotinterp()
