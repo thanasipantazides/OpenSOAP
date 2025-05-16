@@ -16,6 +16,9 @@ import Rotations
 function jump_opt_vec()
     C_BI0 = diagm([1.0, 1.0, 1.0])
     C_BIf = r_random()
+    # C_BIf = [-0.00633369 0.909761 -0.415084;
+    #     -0.241461 0.401418 0.883493;
+    #     0.97039 0.105822 0.217129]
     # C_BIf = r_euler3(pi / 4 - 0.1) * r_euler2(pi / 4 - 0.1)
     # w0 = [0.01, 0.02, 0.03]
     w0 = [0.0, 0.0, 0.0]
@@ -37,9 +40,9 @@ function jump_opt_vec()
     # set_attribute(model, "ma27_meminc_factor", 4)
     # set_optimizer_attribute(model, "mumps_mem_percent", 4000)
 
-    n = 1000
+    n = 600
     Tf = 60
-    dt = Tf / n
+    tstep = Tf / n
 
     manstep = Int64(ceil(n - n / 4))
 
@@ -66,13 +69,8 @@ function jump_opt_vec()
     wlimmathi[:, manstep:n] .= wf
 
     # find reasonable initial guesses for decision variables
-    # C_guess =
-    # w_guess =
-    # u_guess =
-
     Cs = rotinterp(C_BI0, C_BIf, length(1:manstep))
-    C_guess = cat(Cs, Climlo[:, :, manstep:n], dims=3)
-
+    C_guess = cat(Cs, repeat(C_BIf, outer=[1, 1, n - manstep]), dims=3)
 
     # bounded control:
     @variable(model, u[i=1:3, k=1:n])
@@ -83,9 +81,16 @@ function jump_opt_vec()
 
     # attitude:
     @variable(model, C_BI[i=1:3, j=1:3, k=1:n])
+
     # Figure out if this syntax is doing what I expect:
     # @variable(model, C_BI[i=1:3, j=1:3, k=1:n], start = C_guess[i, j, k])
-
+    for i in 1:3
+        for j in 1:3
+            for k in 1:n
+                set_start_value(C_BI[i, j, k], C_guess[i, j, k])
+            end
+        end
+    end
 
     # control constraint:
     @constraint(model, u .<= mlimmat)
@@ -114,8 +119,8 @@ function jump_opt_vec()
     end)
 
     # dynamic constraints
-    ddt_w(x::Matrix, k::Int) = (x[:, k] .- x[:, k-1]) ./ dt
-    ddt_C(X::Array, w::Array, k::Int) = (X[:, :, k] .- X[:, :, k-1]) ./ dt
+    ddt_w(x::Matrix, k::Int) = (x[:, k] .- x[:, k-1]) ./ tstep
+    ddt_C(X::Array, w::Array, k::Int) = (X[:, :, k] .- X[:, :, k-1]) ./ tstep
     # ddt_mat(X::Array, w::Array, k::Int) = exp(-(
     #     [ 0 -w[3,k-1] w[2,k-1];
     #     w[3,k-1] 0 -w[1,k-1];
@@ -220,11 +225,20 @@ function jump_opt_vec()
                 c = RGBAf(0.0, 0.0, 1.0, i / manstep)
             end
             L = value.(C_BI[:, :, i] * basis[:, b])
+            Lg = 0.8 * C_guess[:, :, i] * basis[:, b]
             lines!(
                 axm,
                 [0, L[1]],
                 [0, L[2]],
                 [0, L[3]],
+                color=c
+            )
+            lines!(
+                axm,
+                [0, Lg[1]],
+                [0, Lg[2]],
+                [0, Lg[3]],
+                linestyle=:dot,
                 color=c
             )
         end
@@ -248,6 +262,29 @@ function jump_opt_vec()
 
     axislegend(axc)
     display(fig)
+end
+
+function test_inner()
+
+    sim = load_mission("config/mission.yaml")
+
+    C_BI0 = diagm([1.0, 1.0, 1.0])
+    C_BIf = OpenSOAP.r_random()
+    # C_BIf = [-0.00633369 0.909761 -0.415084;
+    #     -0.241461 0.401418 0.883493;
+    #     0.97039 0.105822 0.217129]
+    # C_BIf = r_euler3(pi / 4 - 0.1) * r_euler2(pi / 4 - 0.1)
+    # w0 = [0.01, 0.02, 0.03]
+    w0 = [0.0, 0.0, 0.0]
+    wf = [0.0, 0.0, 0.0]
+
+    J = diagm([0.05, 0.1, 0.15])
+    Jinv = inv(J)
+
+    s0 = OpenSOAP.State{Float64}(zeros(3), zeros(3), w0, C_BI0, 0.0, 0.0, 0.0)
+    sf = OpenSOAP.State{Float64}(zeros(3), zeros(3), wf, C_BIf, 0.0, 0.0, 0.0)
+
+    states = OpenSOAP.point_between(s0, sf, 60, sim, true)
 end
 
 function test_rotinterp()
