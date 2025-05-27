@@ -2,7 +2,6 @@ using GLMakie, LinearAlgebra, GeometryBasics
 import CairoMakie
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
 using OpenSOAP, Printf
-using Filesystem
 
 function polar()
     println("loading transformations...")

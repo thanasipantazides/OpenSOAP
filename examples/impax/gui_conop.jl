@@ -2,7 +2,6 @@ using GLMakie, LinearAlgebra
 import CairoMakie
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
 using OpenSOAP
-using Filesystem
 
 function save_power(soln)
     CairoMakie.activate!(type="png")
