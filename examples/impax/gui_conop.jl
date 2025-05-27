@@ -2,6 +2,7 @@ using GLMakie, LinearAlgebra
 import CairoMakie
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
 using OpenSOAP
+using Filesystem
 
 function save_power(soln)
     CairoMakie.activate!(type="png")
@@ -21,7 +22,7 @@ function save_power(soln)
     )
     lines!(ax1, (soln["time"] .- soln["time"][1])/24/3600, soln["state"][19,:]/3600)
     lines!(ax2, (soln["time"] .- soln["time"][1])/24/3600, soln["state"][21,:])
-    save("cases/battery_dod.pdf", fig)
+    save(joinpath("cases","battery_dod.pdf"), fig)
 end
 
 function main()
