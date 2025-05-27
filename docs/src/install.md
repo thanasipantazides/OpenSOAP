@@ -11,7 +11,7 @@ julia
 ## Setting up this project
 Find a folder on your computer you want to store this work in. Navigate there in the terminal. When you've arrived, do:
 ```bash
-git clone https://github.com/thanasipantazides/OpenSOAP.git
+git clone --recursive https://github.com/thanasipantazides/OpenSOAP.git
 cd OpenSOAP
 ```
 
