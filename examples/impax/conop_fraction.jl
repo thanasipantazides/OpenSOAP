@@ -2,12 +2,13 @@ using GLMakie, LinearAlgebra, GeometryBasics
 import CairoMakie
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
 using OpenSOAP, Printf
+using Filesystem
 
 function polar()
     println("loading transformations...")
     eops = SatelliteToolboxTransformations.fetch_iers_eop()
     # compute orbit
-    sim = load_mission("config/mission.yaml")
+    sim = load_mission(joinpath("config", "mission.yaml"))
     
     println("integrating...")
     soln = integrate_system(dynamics_orbit!, sim.initstate, sim.tspan, sim.dt, sim)
@@ -35,7 +36,7 @@ function polar()
     orbit_normal = LinearAlgebra.cross(soln["state"][1:3, i_start], soln["state"][4:6, i_start])
     eye_pos = Vec3d(orbit_normal/norm(orbit_normal) * norm(soln["state"][1:3, i_start]) * 2)
 
-    texture = load_earth_texture_to_ecef("assets/map_diffuse.png")
+    texture = load_earth_texture_to_ecef(joinpath("assets", "map_diffuse.png"))
     # lighting position of sun:
     pos_eci = SatelliteToolboxCelestialBodies.sun_position_mod(t_jd_s/3600/24)
     sun_light = Vec3f(pos_eci)*1e4
@@ -103,7 +104,7 @@ function polar()
     ylims!(pie_ax, -pie_scale, pie_scale)
     xlims!(pie_ax, -pie_scale, pie_scale)
     
-    save("cases/hud_conop.png", fig, update=false, px_per_unit=10.0)
+    save(joinpath("cases","hud_conop.png"), fig, update=false, px_per_unit=10.0)
 
     # display(fig, update=false)
     
@@ -125,7 +126,7 @@ function main()
     println("loading transformations...")
     eops = SatelliteToolboxTransformations.fetch_iers_eop()
     # compute orbit
-    sim = load_mission("config/mission.yaml")
+    sim = load_mission(joinpath("config","mission.yaml"))
     
     println("integrating...")
     soln = integrate_system(dynamics_orbit!, sim.initstate, sim.tspan, sim.dt, sim)
@@ -219,7 +220,7 @@ function main()
     )    
     
     # load Earth texture (these are all equirectangular projection/plate carreé):
-    texture = load_earth_texture_to_ecef("assets/map_diffuse.png")
+    texture = load_earth_texture_to_ecef(joinpath("assets","map_diffuse.png"))
     # texture = load_earth_texture_to_ecef("assets/map_bathy.png")
     # texture = load_earth_texture_to_ecef("assets/map_veggie.jpeg")
     # texture = load_earth_texture_to_ecef("assets/map_pol.png")

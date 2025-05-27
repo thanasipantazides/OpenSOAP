@@ -17,7 +17,7 @@ function plot_magnetic_field()
     target_list = sim.mission.targets
 
     GLMakie.activate!(title="OpenSOAP")
-    texture = load_earth_texture_to_ecef("assets/map_diffuse.png")
+    texture = load_earth_texture_to_ecef(joinpath("assets","map_diffuse.png"))
     
     fig = Figure(size=(1400,840))
     display(fig)

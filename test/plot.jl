@@ -2,41 +2,7 @@ using GLMakie, LinearAlgebra
 import CairoMakie
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
 using OpenSOAP
-
-@doc raw"""
-    make_solar_panels()
-
-Construct an array of solar panels for the spacecraft.
-"""
-function make_solar_panels()::Vector{SolarPanel}
-    # pxf = SolarPanel([1.0;0;0], 0.295, 0.005*4)
-    # pxb = SolarPanel([-1.0;0;0], 0.295, 0.005*4)
-    # pyf = SolarPanel([0.0;1;0], 0.295, 0.005*6)
-    # pyb = SolarPanel([0.0;-1;0], 0.295, 0.005*6)
-    # pzf = SolarPanel([0.0;0;1], 0.295, 0.005*12)
-    # pzb = SolarPanel([0.0;0;-1], 0.295, 0.005*12)
-
-    # return [pxf; pxb; pyf; pyb; pzf; pzb]
-    pzb = SolarPanel([0.0;0;-1], 0.295, 0.003018*40)
-    return [pzb]
-end
-
-@doc raw"""
-    make_targets()
-
-Construct a list of target objects for pointing.
-"""
-function make_targets()
-    eops = SatelliteToolboxTransformations.fetch_iers_eop()
-    sun = SunTarget(
-        "Sun",
-        eops
-    )
-
-    gss = OpenSOAP.load_mission("config/targets/groundstations.yaml", GroundTarget)
-    target_list = [sun; gss...]
-    return target_list
-end
+using Filesystem
 
 @doc raw"""
     setup_parameters()
@@ -45,68 +11,11 @@ Convenience function to build all necessary simulation data, and create a `LEOSi
 """
 function setup_parameters()::LEOSimulation
 
-    leo_sim = load_mission("config/mission.yaml")
-    
-    # earth_data = EarthProperties(3.986e14, 1.081874e-4, SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS, 1361)
-
-    # start_time_jd = SatelliteToolboxTransformations.date_to_jd(2027, 11, 28, 0, 25, 0)
-    # start_time_s = start_time_jd * 3600 * 24
-    # # duration_s = 3600*24*365
-    # duration_s = 3600*24*365
-    # tspan = [start_time_s, start_time_s + duration_s]
-    # dt_s = 60
-
-    # inc = 70*pi/180
-    # r0 = [earth_data.r+400e3; 0; 0]
-    # v0m = sqrt(earth_data.mu/norm(r0))
-    # v0 = 1.0*[0; v0m*cos(inc); v0m*sin(inc)]
-    # w0 = [1;1;1]*1e-2
-    # C_BI0 = diagm([1;1;1])
-    # E0 = 40*3600
-    # S0 = 16*8e9
-    # M0 = 1
-    # # modes:
-    # #   1: safe
-    # #   2: charging
-    # #   3: downlink
-    # #   4: science
-
-    # x0 = [r0;v0;w0;vec(C_BI0);E0;S0;M0]
-
-    # targets = make_targets()
-
-    # mass_data = MassProperties(
-    #     10.0, # kg
-    #     diagm([2;1;4])*1e-3
-    # )
-    # power_data = PowerProperties(
-    #     84*60*60.0,   # Whr to J
-    #     0.1*13.725,         # W
-    #     make_solar_panels()
-    # )
-    # data_data = DataProperties(
-    #     capacity=8*8e9,     # b
-    #     production=1e6,        # bps
-    #     transmit=1.5e6        # bps
-    # )
-    # spacecraft_data = SpacecraftProperties(
-    #     "impax",
-    #     power_data,
-    #     data_data,
-    #     mass_data
-    # )
-    # mission_data = Mission(
-    #     "impax",
-    #     spacecraft_data,
-    #     targets
-    # )
-    # leo_sim = LEOSimulation(
-    #     earth=earth_data,
-    #     mission=mission_data,
-    #     tspan=tspan,
-    #     dt=dt_s,
-    #     initstate=x0
-    # )
+    leo_sim = load_mission(joinpath("config","mission.yaml"))
+    try 
+        mkdir("cases")
+    catch e
+    end
 
     return leo_sim
 end
@@ -139,7 +48,7 @@ function save_power(soln)
     )
     lines!(ax1, (soln["time"] .- soln["time"][1])/24/3600, soln["state"][19,:]/3600)
     lines!(ax2, (soln["time"] .- soln["time"][1])/24/3600, soln["state"][21,:])
-    save("cases/battery_dod.pdf", fig)
+    save(joinpath("cases","battery_dod.pdf"), fig)
 end
 
 function plot_main()
@@ -207,14 +116,14 @@ function plot_main()
         clear=true)
     )
     # populate auxiliary axes:
-    detail_ax = Axis(
-        fig[5,4], 
-        backgroundcolor=:black, 
-        limits=(0, soln["time"][end] - soln["time"][1], -0.2, 0.2), 
-        title="Angular rates in body frame", 
-        xlabel="Time [s]", 
-        ylabel="Angular rate [rad/s]"
-    )
+    # detail_ax = Axis(
+    #     fig[5,4], 
+    #     backgroundcolor=:black, 
+    #     limits=(0, soln["time"][end] - soln["time"][1], -0.2, 0.2), 
+    #     title="Angular rates in body frame", 
+    #     xlabel="Time [s]", 
+    #     ylabel="Angular rate [rad/s]"
+    # )
     visible_ax = Axis(
         fig[2,4],
         backgroundcolor=:black, 
@@ -249,9 +158,9 @@ function plot_main()
     )    
     
     # load Earth texture (these are all equirectangular projection/plate carreé):
-    texture = load_earth_texture_to_ecef("assets/map_diffuse.png")
-    # texture = load_earth_texture_to_ecef("assets/map_bathy.png")
-    # texture = load_earth_texture_to_ecef("assets/map_veggie.jpeg")
+    texture = load_earth_texture_to_ecef(joinpath("assets","map_diffuse.png"))
+    # texture = load_earth_texture_to_ecef(joinpath("assets","map_bathy.png"))
+    # load_earth_texture_to_ecef(joinpath("assets","map_veggie.png"))
     
     set_theme!(theme_dark())
     
@@ -260,7 +169,7 @@ function plot_main()
     plot_targets!(ax, target_list, t_jd_s, soln, eops)
     plot_frames!(ax, t_jd_s, soln, eops)
     plot_magnetic_field!(ax, t_jd_s, soln, eops)
-    plot_detail!(detail_ax, t_jd_s, soln)
+    # plot_detail!(detail_ax, t_jd_s, soln)
     plot_visibilities!(visible_ax, t_jd_s, visibilities, soln)
     plot_power!(power_ax, t_jd_s, visibilities, soln)
     plot_data!(data_ax, t_jd_s, visibilities, soln)
@@ -268,7 +177,8 @@ function plot_main()
 
     fig[2:5,5] = Legend(fig, visible_ax, "Visibility", framevisible = false, labelsize=10.0, patchsize=(20.0f0, 10.0f0), valign=:top, halign=:left)
     fig[1,5] = Legend(fig, mode_ax, "Mode", framevisible = false, labelsize=10.0, patchsize=(20.0f0, 10.0f0), halign=:left)
-    linkxaxes!(detail_ax, visible_ax, power_ax, data_ax, mode_ax)
+    linkxaxes!(visible_ax, power_ax, data_ax, mode_ax)
+    # linkxaxes!(detail_ax, visible_ax, power_ax, data_ax, mode_ax)
     hidexdecorations!(visible_ax, grid=false, ticks=false)
     hideydecorations!(visible_ax, label=false)
     hidexdecorations!(mode_ax, grid=false, ticks=false)

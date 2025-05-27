@@ -240,7 +240,7 @@ function mission_stats(soln::Dict, target_histories::Dict, params)::Dict{String,
     output *= @sprintf "Mean slew angle:\t%0.3f º\n" 180*sum(slew_angle)/maneuver_counter/pi
     output *= @sprintf "Mean conop slew:\t%0.3f º\n" 180*sum(mode_angle)/mode_counter/pi
     output *= @sprintf "Mean mode changes per orbit:\t%0.3f\n" mode_counter*period/(soln["time"][end] - soln["time"][1])
-    open("cases/sim_results.txt", "w") do file
+    open(joinpath("cases","sim_results.txt"), "w") do file
         Base.write(file, output)
     end
     println("wrote mission statistics to cases/sim_results.txt")
