@@ -8,7 +8,7 @@ If you are new to the Julia programming language, follow these steps to install 
 julia
 ```
 
-## Setting up this project
+## Setting up this project for Windows
 Find a folder on your computer you want to store this work in. Navigate there in the terminal. When you've arrived, do:
 ```bash
 git clone --recursive https://github.com/thanasipantazides/OpenSOAP.git
@@ -29,16 +29,23 @@ Now install all required packages:
 pkg> instantiate
 ```
 This may take a few minutes. When complete, press backspace/delete to return to the main Julia REPL.
-
+<!-- Changed to comply with windows -->
 Once complete, try running the test simulation and displaying plots with:
 ```julia
-julia> include("test/plot.jl")
+julia> include("test\\plot.jl")
+```
+<!-- Added to open test simulation 
+Locate this in the installation guide with everything else
+-->
+Finally, to open/run the test simulation:
+```julia
+julia> plot_main()
 ```
 
 ## Building documentation
 Navigate to the docs folder, and start the local Julia environment:
 ```bash
-cd OpenSOAP/docs
+cd OpenSOAP\\docs
 julia --project=.
 ```
 

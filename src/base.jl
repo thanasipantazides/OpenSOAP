@@ -36,7 +36,7 @@ function axisangle(X::Matrix{<:Real})
     ax = real.(V[:, i[2]])
     # ang = atan(imag(λ[i[3]]), real(λ[i[3]]))
 
-    ang = acos((tr(X) - 1) / 2)
+    ang = acos(min((tr(X) - 1) / 2,1.0))
     e1 = (X[3, 2] - X[2, 3]) / 2 / sin(ang)
     e2 = (X[1, 3] - X[3, 1]) / 2 / sin(ang)
     e3 = (X[2, 1] - X[1, 2]) / 2 / sin(ang)
