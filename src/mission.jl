@@ -145,22 +145,36 @@ function mission_stats(soln::Dict, target_histories::Dict, params)::Dict{String,
 
     for (key, val) in target_histories
         change = diff(val)
-        starts = findall(i->(i > 0), change)
-        stops = findall(i->(i < 0), change)
+        starts = findall(i -> (i > 0), change)
+        stops = findall(i -> (i < 0), change)
+        
         if val[1] == 1
             starts = [1; starts]
-        end 
+        end
+        
         if length(starts) == 0 && length(stops) == 0
             continue
         end
+    
         durations = [soln["time"][stops[i]] - soln["time"][starts[i]] for i in 1:min(length(starts), length(stops))]
-        output *= @sprintf "\t- %s:\t%.3f\n" key Statistics.mean(durations)/period
-        
+    
+        # Save durations in the timings dictionary (or whatever you called it)
+        timings[key] = durations
+    
         if key != suntarget.name
             total_gs_passes += min(length(starts), length(stops))
         end
     end
-
+    
+    # After you've collected all durations, now print out the averages safely:
+    for (key, durations) in timings
+        if isempty(durations)
+            output *= @sprintf "\t- %s:\t(no data)\n" key
+        else
+            output *= @sprintf "\t- %s:\t%.3f\n" key Statistics.mean(durations) / period
+        end
+    end
+    
     in_safe = zeros(length(soln["time"]))
     in_power = zeros(length(soln["time"]))
     in_downlink = zeros(length(soln["time"]))
