@@ -1,5 +1,6 @@
 using StaticArrays
 import LinearAlgebra, LinearAlgebra.cross
+import Makie
 @doc raw"""
     cross(x)
 
@@ -56,6 +57,22 @@ function axisangle(X::SMatrix{3,3})
 end
 function axisangle(ax::Vector{<:Real}, ang::Real)
     return I * cos(ang) + (1 - cos(ang)) * ax * ax' + cross(ax) * sin(ang)
+end
+
+Makie.Quaternion(X::Matrix{Float64}) = begin
+    qr = 0.5*sqrt(1 + LinearAlgebra.tr(X))
+    qi = 1/4/qr*(X[3,2] - X[2,3])
+    qj = 1/4/qr*(X[1,3] - X[3,1])
+    qk = 1/4/qr*(X[2,1] - X[1,2])
+    return Makie.Quaternion(qi, qj, qk, qr)
+end
+
+Makie.Quaternion(X::SMatrix{3,3}) = begin 
+    qr = 0.5*sqrt(1 + LinearAlgebra.tr(X))
+    qi = 1/4/qr*(X[3,2] - X[2,3])
+    qj = 1/4/qr*(X[1,3] - X[3,1])
+    qk = 1/4/qr*(X[2,1] - X[1,2])
+    return Makie.Quaternion(qi, qj, qk, qr)
 end
 
 @doc raw"""
