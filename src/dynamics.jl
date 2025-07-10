@@ -1,6 +1,7 @@
 using LinearAlgebra
 import SatelliteToolboxBase, SatelliteToolboxTransformations
 using StaticArrays
+using ProgressMeter
 
 import Base: +, *
 
@@ -465,4 +466,72 @@ function dynamics_attitude!(x::State{<:Real}, t::Real, maneuver::Maneuver, initi
     dx.angular_velocity = I_B \ (torque_B - cross(x.angular_velocity) * I_B * x.angular_velocity)
 
     return dx
+end
+
+function orbit_dynamics!(x_dot::State{S}, x::State{S}, t::S, dt::S, params) where {S<:Real}
+    z = [0; 0; 1]
+    x_dot.velocity = x.position
+    x_dot.position = -params.earth.mu / (norm(x.position)^3) .* x.position + 3 * params.earth.mu * params.earth.j_2 * params.earth.r^2 / 2 / norm(x.position)^5 * ((5 / norm(x.position)^2 * (z' * x.position)^2 - 1) * x.position - 2 * (z' * x.position) * z)
+end
+
+function simulate_orbit!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}}, times::Vector{S}, states::Vector{State{S}}) where {S<:Real}
+    # if "perturbations" in keys(sim_config)
+    #     if "forces" in keys(sim_config["perturbations"])
+
+    #     end
+    # end
+
+    if length(states) != length(times)
+        states = cat(states, Vector{State{S}}(undef, length(times) - length(states)))
+    end
+
+    dt = 0.0
+    k1 = State{S}()
+    k2 = State{S}()
+    k3 = State{S}()
+    k4 = State{S}()
+    @showprogress desc = "Propagating orbit..." for k in eachindex(times)
+        if k == 1
+            continue
+        end
+        dt = times[k] - times[k-1]
+        orbit_dynamics!(k1, states[k-1], times[k-1], dt, sim)
+        orbit_dynamics!(k2, states[k-1] + dt / 2 * k1, times[k-1] + dt / 2, dt, sim)
+        orbit_dynamics!(k3, states[k-1] + dt / 2 * k2, times[k-1] + dt / 2, dt, sim)
+        orbit_dynamics!(k4, states[k-1] + dt * k3, times[k-1] + dt, dt, sim)
+
+        states[k] = states[k-1] + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+    end
+
+    # also compute visibilities and target at each loop step
+end
+
+function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}})
+
+    # propagate orbit
+    #   along a coarse 1 second grid
+
+    times = Vector{Float64}(sim.tspan[1]:1:sim.tspan[2])
+    n_orbit = length(times)
+    states = Vector{State{Float64}}(undef, n_orbit)
+    states[1] = State{Float64}(sim) # define initial condition
+
+    println("simulating ", ((sim.tspan[2] - sim.tspan[1]) / 24 / 3600), " days")
+    simulate_orbit!(sim, sim_config, times, states)
+
+    #   compute visibilities
+    #   run conop logic for targeting
+    #
+    # attitude control
+    #   along a fine grid, with steps defined by the agilitoid
+    #   heuristic_control_stepsize = 0.22/sqrt(norm(Iinv*m_max))
+    #   before computing, warn that "performing n maneuvers, each takes ~150 seconds to compute"
+    #   ... and show progress bar (`using ProgressMeter`)
+    #
+    # power, data, flows
+    #
+    # return state trajectory, time, target visibility mask
+    #
+    return times, states
+
 end
