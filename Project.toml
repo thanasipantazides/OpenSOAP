@@ -6,6 +6,7 @@ version = "0.1.0"
 [deps]
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
+DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
@@ -23,6 +24,7 @@ MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 NLopt = "76087f3c-5699-56af-9a33-bf431cd00edd"
 OptimalControl = "5f98b655-cc9a-415a-b60e-744165666948"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Rotations = "6038ab10-8711-5258-84ad-4b1120ba62dc"
 SatelliteToolbox = "6ac157d9-b43d-51bb-8fab-48bf53814f4a"
@@ -36,8 +38,14 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [compat]
+DelimitedFiles = "1.9.1"
 FiniteDiff = "2.27.0"
 ForwardDiff = "0.10.38"
 InfiniteOpt = "0.5.9"
+<<<<<<< HEAD
 Makie = "0.22.7"
+=======
+Makie = "0.22.4"
+>>>>>>> 14dc6cbdbd021b96c0ccd20aa60beea927cb5fd6
 OptimalControl = "1.0.2"
+ProgressMeter = "1.10.4"
