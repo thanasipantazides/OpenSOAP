@@ -1197,6 +1197,218 @@ function plot_state!(fig::Makie.Figure, maneuver::Maneuver, soln::Dict, params)
     linkxaxes!(torque_p, angrate_p, atterr_p, ypr_p, axis_p, ang_p, attcheck_p)
 end
 
+function plot_earth_static!(ax::Makie.LScene, t_jd_s, iers_eops, texture_ecef)
+    r_E = EARTH_EQUATORIAL_RADIUS
+    r_P = EARTH_POLAR_RADIUS
+    
+    C_IF = Matrix(r_ecef_to_eci(ITRF(), J2000(), t_jd_s/24/3600, iers_eops))
+
+    # making surface texture:
+    # nθ = 3600
+    nθ = length(texture_ecef[:,1])
+    nφ = 100
+    θ = range(0, stop=2π, length=nθ)
+    φ = range(0, stop=π, length=nφ)
+
+    local_r = r_E*cos(35*pi/180)
+    local_z = r_P*sin(35*pi/180)
+
+    p35 = [Point3f(C_IF*[local_r * cos(ang); local_r * sin(ang); local_z]) for ang in θ]
+    n35 = [Point3f(C_IF*[local_r * cos(ang); local_r * sin(ang); -local_z]) for ang in θ]
+    equat = [Point3f(C_IF*[r_E * cos(ang); r_E * sin(ang); 0]) for ang in θ]
+    
+    mesh_X = zeros(nθ, nφ)
+    mesh_Y = zeros(nθ, nφ)
+    mesh_Z = zeros(nθ, nφ)
+    for i in 1:nθ
+        for j in 1:nφ
+            # a point in the mesh
+            p = C_IF*[r_E*cos(θ[i])*sin(φ[j]); r_E*sin(θ[i])*sin(φ[j]); r_P*cos(φ[j])]
+            mesh_X[i,j] = p[1]
+            mesh_Y[i,j] = p[2]
+            mesh_Z[i,j] = p[3]
+        end
+    end
+
+    surface!(
+        ax,
+        mesh_X,
+        mesh_Y,
+        mesh_Z,
+        color=texture_ecef,
+        diffuse=0.8
+    )
+
+    lines!(
+        ax,
+        p35,
+        color=:white
+    )
+    lines!(
+        ax,
+        n35,
+        color=:white
+    )
+    lines!(
+        ax,
+        equat,
+        color=:white,
+        linestyle=:dashdot
+    )
+end
+
+function plot_targets_static!(ax::Makie.LScene, targets::Vector{<:AbstractTarget}, shading::Bool, t_jd_s, soln, eops)
+    r_E = EARTH_EQUATORIAL_RADIUS
+    arrow_scale = 0.01
+    axis_scale = 2
+
+    sun_targets = [target for target in targets if typeof(target) === SunTarget]
+    ground_targets = [target for target in targets if typeof(target) === GroundTarget]
+
+    gs_pts = [Point3f(position_eci(target, t_jd_s)) for target in ground_targets]
+
+    sun_pos = [Vec3f([0,0,0])]
+    if length(sun_targets) > 0
+        sun_I = position_eci(sun_targets[1], t_jd_s)
+        sun_proj = axis_scale*r_E*sun_I/norm(sun_I)
+        sun_pos = [Vec3f(sun_proj)]
+    end
+    sun_root = [Point3f([0;0;0])]
+
+    # mesh for target
+    C_IF_r = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/24/3600, eops)
+    C_IF = Matrix(C_IF_r)
+
+    # assume circular orbit:
+    r_S = norm(soln["state"][1:3,1])
+    
+    nθ = 24
+    θ = range(0, stop=2π, length=nθ)
+    circle_X = zeros(nθ, length(ground_targets))
+    circle_Y = zeros(nθ, length(ground_targets))
+    circle_Z = zeros(nθ, length(ground_targets))
+    for k in eachindex(ground_targets)
+        # first draw cone z-up
+        # then transform to align with zenith-up at target.position
+        target = ground_targets[k]
+        α = π - target.cone
+        β = π - target.cone - π/2
+        γ = asin(r_E/r_S*sin(α))
+        r_circle = r_S*cos(γ + β)   # radius of gs cone's circle projected onto sphere of orbit
+        δ = r_circle*tan(β)
+
+        pos_F = Vector(position_ecef(target, t_jd_s))
+        C_FT = r_min_arc([0;0;1], pos_F / norm(pos_F))
+
+        c_F = pos_F + (1+δ)*pos_F/norm(pos_F)  # center of gs cone's circle projected onto sphere of orbit
+
+        for i in 1:nθ
+            p_T = r_circle .* [
+                cos(θ[i]);
+                sin(θ[i]);
+                0
+            ]
+            p = C_IF*(C_FT*p_T) + C_IF*c_F
+            # p = C_IF*(C_FT*p_T) + position_eci(target, t_jd_s)
+            circle_X[i,k] = p[1]
+            circle_Y[i,k] = p[2]
+            circle_Z[i,k] = p[3]
+        end
+    end
+
+    # mesh for whole cone
+
+    height = 0.05
+
+    nθ = 20
+    nζ = 2
+    θ = range(0, stop=2π, length=nθ)
+    ζ = range(0, stop=r_E*height, length=nζ)
+    
+    mesh_X = zeros(nθ, nζ, length(ground_targets))
+    mesh_Y = zeros(nθ, nζ, length(ground_targets))
+    mesh_Z = zeros(nθ, nζ, length(ground_targets))
+    # for (k, target) in ground_targets
+    for k in eachindex(ground_targets)
+        # first draw cone z-up
+        # then transform to align with zenith-up at target.position
+        target = ground_targets[k]
+        b = tan(target.cone)
+        pos_F = Vector(position_ecef(target, t_jd_s))
+        C_FT = r_min_arc([0;0;1], pos_F / norm(pos_F))
+
+        # note: currently, this ignores FixedFrameTarget.direction
+        for i in 1:nθ
+            for j in 1:nζ
+                # a point in the mesh
+                p_T = [
+                    b*cos(θ[i])*ζ[j]; 
+                    b*sin(θ[i])*ζ[j]; 
+                    ζ[j]
+                ]
+                p = C_IF*(C_FT*p_T) + position_eci(target, t_jd_s)
+                mesh_X[i,j,k] = p[1]
+                mesh_Y[i,j,k] = p[2]
+                mesh_Z[i,j,k] = p[3]
+            end
+        end
+    end
+
+    # meshs = Matrix{Observable{Matrix{Float64}}}(undef, 3,length(targets))
+    # for i in 1:3
+    #     for j in 1:length(ground_targets)
+    #         meshs[i,j] = lift(cone_meshes) do globe_mesh
+    #             return globe_mesh[i][:,:,j]
+    #         end
+    #     end
+    # end
+
+    # gs_lines = Matrix{Observable{Vector{Float64}}}(undef, 3, length(targets))
+    # for i in 1:3
+    #     for k in 1:length(ground_targets)
+    #         gs_lines[i,k] = lift(cone_circles) do cone_circle
+    #             return cone_circle[i][:,k]
+    #         end
+    #     end
+    # end
+
+    for i in 1:length(ground_targets)
+        if shading
+            surface!(
+                ax,
+                mesh_X[:,:,i],
+                mesh_Y[:,:,i],
+                mesh_Z[:,:,i],
+                color=fill((:lightgreen,0.33),20,2)
+            )
+        end
+        scatter!(
+            ax,
+            [gs_pts[i]],
+            # color=:lightgreen,
+            markersize=10
+        )
+        lines!(
+            ax,
+            circle_X[:,i],
+            circle_Y[:,i],
+            circle_Z[:,i],
+            # color=:lightgreen
+        )
+    end
+
+    for i in 1:length(sun_targets)
+        scatter!(
+            ax,
+            sun_pos,
+            color=RGBf(243/255, 241/255, 218/255),
+            marker='\u2609',
+            markersize=20
+        )
+        break
+    end
+end
+
 @recipe(PolyPlot, shape) do scene
     Theme(
         plot_color = :red
