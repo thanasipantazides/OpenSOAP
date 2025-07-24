@@ -42,6 +42,10 @@ DelimitedFiles = "1.9.1"
 FiniteDiff = "2.27.0"
 ForwardDiff = "0.10.38"
 InfiniteOpt = "0.5.9"
+<<<<<<< HEAD
+Makie = "0.22.7"
+=======
 Makie = "0.22.4"
+>>>>>>> 14dc6cbdbd021b96c0ccd20aa60beea927cb5fd6
 OptimalControl = "1.0.2"
 ProgressMeter = "1.10.4"
