@@ -130,7 +130,7 @@ function compute_and_return_disturbances(sim, position_I, velocity_I, attitude_B
         # === Reduce Output Frequency (every 1000... This is an attempt to end the "endless loop")
     ### If we take average per 10000 time step of compute disturbances... maybe we can still get data
     ### Without the "endless loop"... Will the affect the accuracy of the data though?
-        if k % 1 == 1 || k == length(time)
+        if k % 1000 == 1 || k == length(time)
             println("Time: $(round(time[k], digits=1)) s")
             println("  Total Torque: $(round.(T_total; digits=4)) Nm")
             println("  Likely Cause: $disturbance\n")
