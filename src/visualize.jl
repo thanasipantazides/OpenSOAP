@@ -903,7 +903,7 @@ end
 function plot_magnetic_field!(ax::Makie.LScene, t_jd_s, soln::Dict, eops)
     r_E = EARTH_EQUATORIAL_RADIUS
 
-    m = MagneticTarget("mag", eops)
+    m = MagneticTarget("mag", [], eops)
 
     tail_length = 600
     step = 10
@@ -1409,6 +1409,41 @@ function plot_targets_static!(ax::Makie.LScene, targets::Vector{<:AbstractTarget
     end
 end
 
+function plot_visibilities!(ax::Makie.Axis, times::Vector{S}, states::Vector{State{S}}, target_visibilities::Matrix{S}, target_choice::Vector{Int64}, sim::LEOSimulation) where S<:Real
+    n_target, n_orbit = size(target_visibilities)
+
+    transitions = diff(target_visibilities, dims=2)
+    colors = cgrad(["blue","magenta"],n_target)
+    
+    for t in 1:n_target
+        starts = findall(i->i>0, transitions[t,:])
+        stops = findall(i->i<0, transitions[t,:])
+        patch = [Rect(times[starts[k]], t - 0.5, times[stops[k]] - times[starts[k]], 1) for k in 1:min(length(starts), length(stops))]
+        if isa(sim.mission.targets[t], SunTarget)
+            # colors[t] = :yellow
+        end
+        poly!(
+            ax,
+            patch,
+            alpha=1.0,
+            strokewidth=0.1,
+            strokecolor=:white,
+            color=colors[t],
+            label=sim.mission.targets[t].name
+        )
+    end
+
+    lines!(
+        ax,
+        times,
+        target_choice,
+        linewidth = 0.5,
+        # marker=:dot,
+        color = :black,
+        label = "target trajectory"
+    )
+end
+
 @recipe(PolyPlot, shape) do scene
     Theme(
         plot_color = :red
@@ -1448,4 +1483,367 @@ function Makie.plot!(polyplot::PolyPlot{<:Tuple{Polyhedron}})
         )
     end
     polyplot
+end
+
+function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}, target_visibilities::Matrix{S}, target_choice::Vector{Int64}, reference_attitude::Array{S, 3}, sim::LEOSimulation) where S<:Real
+    eops = SatelliteToolboxTransformations.fetch_iers_eop()
+    texture = load_earth_texture_to_ecef(joinpath("assets","map_diffuse.png"))
+    model = load(joinpath("assets","IMPAX_mech_clean.obj"))
+    axes_colors = [:red, :green, :blue]
+
+    al = AmbientLight(RGBf(243/255, 241/255, 230/255))
+    ax_globe = LScene(
+        fig[1:2,1], 
+        show_axis = false, 
+        scenekw = (
+            # lights=[dl, al], 
+            lights = [al],
+            # backgroundcolor=:black, 
+            clear=true
+        )
+    )
+
+    layout_sc_options = GridLayout(fig[1, 2], tellheight = false)
+    layout_env_options = GridLayout(fig[2, 2], tellheight = false)
+
+    Label(layout_sc_options[1, 1],
+        "Spacecraft",
+        justification = :center,
+        lineheight = 1.0,
+        fontsize = 16.0f0
+    )
+    rowgap!(layout_env_options, 4)
+    colgap!(layout_env_options, 4)
+    cb_sc_axes = Checkbox(layout_sc_options[2, 1], checked = false, halign=:right)
+    lb_sc_axes = Label(layout_sc_options[2, 2], "axes", halign=:left)
+    cb_sc_cad = Checkbox(layout_sc_options[3, 1], checked = false, halign=:right)
+    lb_sc_cad = Label(layout_sc_options[3, 2], "model", halign=:left)
+    cb_sc_head = Checkbox(layout_sc_options[4, 1], checked = true, halign=:right)
+    lb_sc_head = Label(layout_sc_options[4, 2], "head", halign=:left)
+    cb_sc_path = Checkbox(layout_sc_options[5, 1], checked = true, halign=:right)
+    lb_sc_path = Label(layout_sc_options[5, 2], "path", halign=:left)
+    cb_sc_mode = Toggle(layout_sc_options[6,1], active = false, halign=:right)
+    lb_sc_mode = Label(layout_sc_options[6,2], "mode", halign=:left)
+    
+    Label(layout_env_options[1, 1],
+        "Environment",
+        justification = :center,
+        lineheight = 1.0,
+        fontsize = 16.0f0
+    )
+    rowgap!(layout_env_options, 4)
+    colgap!(layout_env_options, 4)
+    cb_env_axes = Checkbox(layout_env_options[2, 1], checked = false, halign=:right)
+    lb_env_axes = Label(layout_env_options[2, 2], "axes", halign=:left)
+    cb_env_globe = Checkbox(layout_env_options[3, 1], checked = true, halign=:right)
+    lb_env_globe = Label(layout_env_options[3, 2], "globe", halign=:left)
+    cb_env_grid = Checkbox(layout_env_options[4, 1], checked = false, halign=:right)
+    lb_env_grid = Label(layout_env_options[4, 2], "grids", halign=:left)
+    cb_env_field = Checkbox(layout_env_options[5, 1], checked = false, halign=:right)
+    lb_env_field = Label(layout_env_options[5, 2], "B-field", halign=:left)
+    cb_env_gs_loc = Checkbox(layout_env_options[6, 1], checked = false, halign=:right)
+    lb_env_gs_loc = Label(layout_env_options[6, 2], "groundstations", halign=:left)
+
+    colsize!(fig.layout, 1, Relative(3/4))
+
+    # move the plotted timestep with arrow keys:
+    timestep = Observable(1)
+    on(events(ax_globe).keyboardbutton) do event
+        if event.action == Keyboard.press || event.action == Keyboard.repeat
+            stepsize = 10
+            if Keyboard.left_shift in events(ax_globe).keyboardstate || Keyboard.right_shift in events(ax_globe).keyboardstate
+                stepsize = 500
+            end
+            if event.key == Keyboard.right
+                timestep[] = min(max(1, timestep[] + stepsize), length(times))
+                notify(timestep)
+                return
+            elseif event.key == Keyboard.left
+                timestep[] = min(max(1, timestep[] - stepsize), length(times))
+                notify(timestep)
+                return
+            end
+        end
+    end
+    
+    # plotting spacecraft position
+    mode_colors = Dict(
+        idle::Modes => [0.0, 0.0, 1.0],
+        science::Modes => [1.0, 0.0, 1.0],
+        charging::Modes => [1.0, 1.0, 0.0],
+        downlink::Modes => [0.0, 1.0, 0.0],
+        safe::Modes => [0.2, 0.2, 0.2]
+    )
+    tail_gap = 100
+    tail_length = Int(floor(2*pi*sqrt(norm(states[1].position)^3/sim.earth.mu) / (times[2] - times[1]))) - tail_gap
+    pos = lift(timestep) do timestep
+        return Point3f(states[timestep].position)
+    end
+    time_range = lift(timestep) do timestep
+        first_step = max(1, timestep - tail_length)
+        return first_step:timestep
+    end
+    pos_hist = lift(time_range) do time_range
+        return Point3f[(states[j].position) for j in time_range]
+    end
+    color_trail = lift(time_range) do time_range
+        if cb_sc_mode.active[]
+            return [RGBAf(mode_colors[Modes(states[k].mode)]..., (k - time_range[1])/length(time_range)) for k in time_range]
+        else
+            return [RGBAf(0.1,0.2,0.9, (k - time_range[1])/length(time_range)) for k in time_range]
+        end
+    end
+    
+    scatter!(
+        ax_globe,
+        pos,
+        color=:blue,
+        markersize=15,
+        visible=cb_sc_head.checked
+    )
+    lines!(
+        ax_globe,
+        pos_hist,
+        color=color_trail,
+        linewidth=2,
+        fxaa=true,
+        visible=cb_sc_path.checked
+    )
+    
+    # plotting earth
+    r_E = EARTH_EQUATORIAL_RADIUS
+    r_P = EARTH_POLAR_RADIUS
+    
+    C_IF = lift(timestep) do timestep
+        C_IF_r = r_ecef_to_eci(ITRF(), J2000(), times[timestep]/24/3600, eops)
+        return Matrix(C_IF_r)
+    end
+    
+    ecef_arrow_scale = 0.025
+    ecef_axis_scale = 1.33
+
+    tail = zeros(3,3)
+    ecef_tip = diagm([1;1;1])*r_E*ecef_axis_scale
+
+    ecef_axes_heads = lift(C_IF) do C_IF
+        return [Vec3f(C_IF*ecef_tip[:,i]) for i in 1:3]
+    end
+    ecef_axes_tails = [Point3f(tail[:,i]) for i in 1:3]
+
+    # drawing earth axes:
+    arrows!(
+        ax_globe,
+        ecef_axes_tails,
+        ecef_axes_heads,
+        color=axes_colors,
+        linewidth=ecef_arrow_scale*r_E,
+        arrowsize=Vec3f(ecef_arrow_scale*r_E, ecef_arrow_scale*r_E, ecef_arrow_scale*3*r_E),
+        visible=cb_env_axes.checked
+    )
+
+    # drawing groundstations
+    ground_targets = [target for target in sim.mission.targets if isa(target, GroundTarget)]
+    gs_pos_ecef = [Point3f(position_ecef(target, times[1])) for target in ground_targets]
+    C_IF0 = r_ecef_to_eci(ITRF(), J2000(), times[1]/24/3600, eops)
+
+    gs_pts = lift(C_IF) do C_IF
+        return [Point3f(C_IF*pos) for pos in gs_pos_ecef]
+    end
+
+    # making surface texture:
+    nθ = length(texture[:,1])
+    nφ = 100
+    θ = range(0, stop=2π, length=nθ)
+    φ = range(0, stop=π, length=nφ)
+
+    local_r = r_E*cos(35*pi/180)
+    local_z = r_P*sin(35*pi/180)
+
+    p35 = lift(C_IF) do C_IF
+        return [Point3f(C_IF*[local_r * cos(ang); local_r * sin(ang); local_z]) for ang in θ]    
+    end
+    n35 = lift(C_IF) do C_IF
+       return [Point3f(C_IF*[local_r * cos(ang); local_r * sin(ang); -local_z]) for ang in θ]
+    end
+    equat = lift(C_IF) do C_IF
+        return [Point3f(C_IF*[r_E * cos(ang); r_E * sin(ang); 0]) for ang in θ]
+    end
+    
+    mesh_X = zeros(nθ, nφ)
+    mesh_Y = zeros(nθ, nφ)
+    mesh_Z = zeros(nθ, nφ)
+    globe_mesh = lift(C_IF) do C_IF
+        for i in 1:nθ
+            for j in 1:nφ
+                # a point in the mesh
+                p = C_IF*[r_E*cos(θ[i])*sin(φ[j]); r_E*sin(θ[i])*sin(φ[j]); r_P*cos(φ[j])]
+                mesh_X[i,j] = p[1]
+                mesh_Y[i,j] = p[2]
+                mesh_Z[i,j] = p[3]
+            end
+        end
+        return (mesh_X, mesh_Y, mesh_Z)
+    end
+    X = lift(globe_mesh) do globe_mesh
+        return globe_mesh[1]
+    end
+    Y = lift(globe_mesh) do globe_mesh
+        return globe_mesh[2]
+    end
+    Z = lift(globe_mesh) do globe_mesh
+        return globe_mesh[3]
+    end
+
+    surface!(
+        ax_globe,
+        X,
+        Y,
+        Z,
+        color=texture,
+        diffuse=0.8,
+        visible=cb_env_globe.checked
+    )
+
+    lines!(
+        ax_globe,
+        p35,
+        color=:white,
+        visible=cb_env_grid.checked
+    )
+    lines!(
+        ax_globe,
+        n35,
+        color=:white,
+        visible=cb_env_grid.checked
+    )
+    lines!(
+        ax_globe,
+        equat,
+        color=:white,
+        linestyle=:dashdot,
+        visible=cb_env_grid.checked
+    )
+
+    # plotting groundstations
+    scatter!(
+        ax_globe,
+        gs_pts,
+        color=:grey,
+        visible=cb_env_gs_loc.checked
+    )
+
+    # plotting B-field
+    mag_k = findfirst(x->isa(x, MagneticTarget), sim.mission.targets)
+    mag_target = sim.mission.targets[mag_k]
+
+    field_step = 50
+
+    n_field = tail_length ÷ field_step
+    field_tail = Observable([Point3f(0.0) for k in 1:n_field])
+    field_head = Observable([Point3f(0.0) for k in 1:n_field])
+    field_color = Observable([RGBAf(0.0, 0.0, 0.0, 0.0) for k in 1:n_field])
+    field_index = Observable([0.0 for k in 1:n_field])
+    field_alpha = Observable([0.0 for k in 1:n_field])
+
+    on(time_range) do time_range
+        first_index = time_range[end] - tail_length + 1
+        sparse_range = first_index:field_step:time_range[end]
+        sparse_range = sparse_range[1:n_field]
+        # println("length check: ", length(sparse_range), ", ", n_field)
+        b_idx = 1
+        for k in sparse_range
+            if k < 1
+                field_tail[][b_idx] = Point3f(0.0)
+                field_head[][b_idx] = Point3f(0.0)
+                field_color[][b_idx] = RGBAf(0.0,0.0,0.0,0.0)
+                field_index[][b_idx] = 0.0
+                field_alpha[][b_idx] = 0.0
+            else
+                pos_ecef = r_ecef_to_eci(ITRF(), J2000(), times[k]/24/3600, eops)'*states[k].position
+                igrf_eci = r_ecef_to_eci(ITRF(), J2000(), times[k]/24/3600, eops)*position_ecef(mag_target, Vector(pos_ecef), times[k])
+
+                field_tail[][b_idx] = Point3f(states[k].position)
+                field_head[][b_idx] = Point3f(igrf_eci ./ norm(igrf_eci))
+                # field_color[][b_idx] = RGBAf(1.0 - norm(igrf_eci), 0.0, norm(igrf_eci), b_idx / n_field)
+                field_index[][b_idx] = norm(igrf_eci)
+            end
+            b_idx += 1
+        end
+        max_norm = max(field_index[]...)
+        [field_color[][c] = RGBAf(1.0 - field_index[][c]/max_norm, field_index[][c]/max_norm, 1.0, c / n_field) for c in 1:b_idx-1]
+        [field_alpha[][c] = c/n_field for c in 1:b_idx-1]
+        notify(field_tail)
+        notify(field_head)
+        notify(field_color)
+        notify(field_index)
+        notify(field_alpha)
+    end
+
+    width_scale = 0.005
+    length_scale = 0.1
+    
+    arrows!(
+        ax_globe,
+        field_tail,
+        field_head,
+        color=field_color,
+        # color=(field_index, field_alpha),
+        alpha=field_alpha,
+        colormap=:cool,
+        # colormap=:cool,
+        linewidth=r_E*width_scale,
+        lengthscale=r_E*length_scale,
+        arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
+        # align=:center
+        # diffuse=0.8,
+        # backlight=1.0
+        visible=cb_env_field.checked
+    )
+
+
+    # drawing spacecraft body frame
+    body_arrow_scale = 0.01
+    body_axis_scale = 0.1
+
+    body_tip = diagm([1;1;1])*r_E*body_axis_scale
+
+    C_BI = lift(timestep) do timestep
+        return states[timestep].attitude
+    end
+    body_axes_heads = lift(C_BI) do C_BI # todo: is this wrong? should be heads = [Vec3f(soln["state"][1:3] + C_BI'*body_tip[:,i]) for i in 1:3]?
+        return Vec3f[C_BI*body_tip[:,i] for i in 1:3]
+    end
+    body_axes_tails = lift(pos) do pos
+        return Point3f[pos for i in 1:3]
+    end
+    arrows!(
+        ax_globe,
+        body_axes_tails,
+        body_axes_heads,
+        color=axes_colors,
+        linewidth=body_arrow_scale*r_E,
+        arrowsize=Vec3f(body_arrow_scale*r_E, body_arrow_scale*r_E, body_arrow_scale*3*r_E),
+        visible = cb_sc_axes.checked
+    )
+
+    # drawing cad model
+    model_scale = 0.5*r_E/1e2
+    cad_mesh = mesh!(
+        ax_globe,
+        model,
+        color=:grey,
+        alpha=0.5,
+        space=:data,
+        visible=cb_sc_cad.checked
+    )
+
+    scale!(cad_mesh, model_scale, model_scale, model_scale)
+
+    on(C_BI) do C_BI
+        q_mesh = Makie.Quaternion(C_BI)
+        GLMakie.rotate!(cad_mesh, q_mesh)
+    end
+    on(pos) do pos
+        translate!(cad_mesh, pos[1], pos[2], pos[3])
+    end
 end

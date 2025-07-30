@@ -11,16 +11,24 @@ function load_mission(file::String)
 
     mission_data = YAML.load_file(file)
     gs_file = mission_data["groundstations"]
+    bfield_file = mission_data["field"]
     sp_file = mission_data["spacecraft"]
     sim_file = mission_data["simulation"]
     sim_spec = load_simulation(sim_file)
     gs_spec = load_groundstations(gs_file, GroundTarget)
+    mag_spec = load_bfield(bfield_file, MagneticTarget)
+    sun = SunTarget(
+        "Sun",
+        mag_spec.iers_eops
+    )
+    target_spec = [sun; mag_spec; gs_spec...]
+
     bus_spec = load_spacecraft(sp_file)
     
     mission_data = Mission(
         "impax",
         bus_spec,
-        gs_spec
+        target_spec
     )
 
     earth_data = EarthProperties(3.986e14, 1.081874e-4, SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS, 1361)
@@ -134,10 +142,37 @@ function load_groundstations(file::String, type::Type)
             )
         end
 
-        sun = SunTarget(
-            "Sun",
-            eops
-        )
-        return [sun; result...]
+        return [result...]
+    end
+end
+
+function load_bfield(file::String, type::Type)
+
+    mag_data = YAML.load_file(file)
+    println("\nloading ", length(mag_data), " field records...")
+
+    if type === MagneticTarget
+        eops = SatelliteToolboxTransformations.fetch_iers_eop()
+
+        if length(mag_data) == 1
+            this_mag = mag_data[1]
+            latitude_masks = Vector{Pair{Real,Real}}(undef, 0)
+            for s in this_mag["latitude_masks"]
+                try
+                    push!(latitude_masks, Pair(s[1]*pi/180,s[2]*pi/180))
+                catch
+                    break
+                end
+            end
+
+            mag_spec = MagneticTarget(
+                this_mag["name"],
+                latitude_masks,
+                eops
+            )
+            return mag_spec
+        else
+            return nothing
+        end
     end
 end

@@ -1,6 +1,121 @@
 using StaticArrays
 import LinearAlgebra, LinearAlgebra.cross
 import Makie
+
+import Base: +, *
+mutable struct State{T<:Real}
+    position::SVector{3,T}
+    velocity::SVector{3,T}
+    angular_velocity::SVector{3,T}
+    attitude::SMatrix{3,3,T}
+    battery::T
+    storage::T
+    mode::Int64
+
+    # State{S}(pos::Vector{S}, vel::Vector{S}, ang_vel::Vector{S}, att::Matrix{S}, batt::S, stor::S, mod::Int64) where S<:Number = begin
+    #     new(
+    #         pos[1:3],
+    #         vel[1:3],
+    #         ang_vel[1:3],
+    #         att[1:3,1:3],
+    #         batt,
+    #         stor,
+    #         Int64(round(mod))
+    #     )
+    # end
+    # State{S}(pos::Vector{S}, vel::Vector{S}, ang_vel::Vector{S}, att::Matrix{S}, batt::S, stor::S, mod::Union{S, Int64}) where S <: Real = begin
+    #     new(
+    #         pos[1:3],
+    #         vel[1:3],
+    #         ang_vel[1:3],
+    #         att[1:3,1:3],
+    #         batt,
+    #         stor,
+    #         Int64(round(mod))
+    #     )
+    # end
+    State{S}(pos::SVector{3,S}, vel::SVector{3,S}, ang_vel::SVector{3,S}, att::SMatrix{3,3,S}, batt::S, stor::S, mod::Union{S,Int64}) where {S<:Real} = begin
+        new(
+            pos[1:3],
+            vel[1:3],
+            ang_vel[1:3],
+            att[1:3, 1:3],
+            batt,
+            stor,
+            Int64(round(mod))
+        )
+    end
+
+end
+
+# function State{S}(pos::SVector{3,S}, vel::SVector{3,S}, ang_vel::SVector{3,S}, att::SMatrix{3,3,S}, batt::S, stor::S, mod::Union{S, Int64}) where S <: Real
+#     return State{S}(
+#         pos, vel, ang_vel, att, batt, stor, mod
+#     )
+# end
+
+
+# function State{S}(pos::SVector{3}, vel::SVector{3}, ang_vel::SVector{3}, att::SMatrix{3,3}, batt::S, stor::S, mod::Int64) where S <: Real
+#     return State{Float64}(
+#         pos, vel, ang_vel, att, batt, stor, mod
+#     )
+# end
+
+@enum Modes begin 
+    safe 
+    idle
+    detumble 
+    downlink 
+    charging 
+    science
+end
+
+function State{S}(pos::Vector{S}, vel::Vector{S}, ang_vel::Vector{S}, att::Matrix{S}, batt::S, stor::S, mod::Union{S,Int64}) where {S<:Real}
+    return State{S}(
+        SVector{3}(pos[1:3]),
+        SVector{3}(vel[1:3]),
+        SVector{3}(ang_vel[1:3]),
+        SMatrix{3,3}(att[1:3, 1:3]),
+        batt, stor, mod
+    )
+end
+
+function State{S}() where {S<:Real}
+    return State{S}(
+        zeros(3),
+        zeros(3),
+        zeros(3),
+        zeros(3, 3),
+        0.0,
+        0.0,
+        0.0
+    )
+end
+
+function +(a::State, b::State)
+    return State{typeof(a.position[1])}(
+        a.position .+ b.position,
+        a.velocity .+ b.velocity,
+        a.angular_velocity .+ b.angular_velocity,
+        a.attitude .+ b.attitude,
+        a.battery .+ b.battery,
+        a.storage .+ b.storage,
+        a.mode .+ b.mode
+    )
+end
+
+function *(a::Real, b::State)
+    return State{typeof(b.position[1])}(
+        a .* b.position,
+        a .* b.velocity,
+        a .* b.angular_velocity,
+        a .* b.attitude,
+        a * b.battery,
+        a * b.storage,
+        Int64(round(a * b.mode))
+    )
+end
+
 @doc raw"""
     cross(x)
 
@@ -37,7 +152,7 @@ function axisangle(X::Matrix{<:Real})
     ax = real.(V[:, i[2]])
     # ang = atan(imag(λ[i[3]]), real(λ[i[3]]))
 
-    ang = acos((tr(X) - 1) / 2)
+    ang = acos(min(1.0, (tr(X) - 1) / 2))
     e1 = (X[3, 2] - X[2, 3]) / 2 / sin(ang)
     e2 = (X[1, 3] - X[3, 1]) / 2 / sin(ang)
     e3 = (X[2, 1] - X[1, 2]) / 2 / sin(ang)

@@ -116,6 +116,18 @@ end
     initstate::Vector{<:Real}
 end
 
+function State{S}(sim::LEOSimulation) where {S<:Real}
+    return State{S}(
+        sim.initstate[1:3],
+        sim.initstate[4:6],
+        sim.initstate[7:9],
+        reshape(sim.initstate[10:18], (3, 3)),
+        sim.initstate[19],
+        sim.initstate[20],
+        sim.initstate[21]
+    )
+end
+
 function can_see_sun(state::Vector{<:Real}, t_jd_s::Real, params)
     sun_I = SatelliteToolboxCelestialBodies.sun_position_mod(t_jd_s/3600/24)
     pos_I = state[1:3]
@@ -150,7 +162,7 @@ function mission_stats(soln::Dict, target_histories::Dict, params)::Dict{String,
         if val[1] == 1
             starts = [1; starts]
         end 
-        if length(starts) == 0 && length(stops) == 0
+        if isempty(starts) || isempty(stops)
             continue
         end
         durations = [soln["time"][stops[i]] - soln["time"][starts[i]] for i in 1:min(length(starts), length(stops))]

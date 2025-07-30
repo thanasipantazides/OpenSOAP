@@ -5,122 +5,6 @@ using ProgressMeter
 
 import Base: +, *
 
-mutable struct State{T<:Real}
-    position::SVector{3,T}
-    velocity::SVector{3,T}
-    angular_velocity::SVector{3,T}
-    attitude::SMatrix{3,3,T}
-    battery::T
-    storage::T
-    mode::Int64
-
-    # State{S}(pos::Vector{S}, vel::Vector{S}, ang_vel::Vector{S}, att::Matrix{S}, batt::S, stor::S, mod::Int64) where S<:Number = begin
-    #     new(
-    #         pos[1:3],
-    #         vel[1:3],
-    #         ang_vel[1:3],
-    #         att[1:3,1:3],
-    #         batt,
-    #         stor,
-    #         Int64(round(mod))
-    #     )
-    # end
-    # State{S}(pos::Vector{S}, vel::Vector{S}, ang_vel::Vector{S}, att::Matrix{S}, batt::S, stor::S, mod::Union{S, Int64}) where S <: Real = begin
-    #     new(
-    #         pos[1:3],
-    #         vel[1:3],
-    #         ang_vel[1:3],
-    #         att[1:3,1:3],
-    #         batt,
-    #         stor,
-    #         Int64(round(mod))
-    #     )
-    # end
-    State{S}(pos::SVector{3,S}, vel::SVector{3,S}, ang_vel::SVector{3,S}, att::SMatrix{3,3,S}, batt::S, stor::S, mod::Union{S,Int64}) where {S<:Real} = begin
-        new(
-            pos[1:3],
-            vel[1:3],
-            ang_vel[1:3],
-            att[1:3, 1:3],
-            batt,
-            stor,
-            Int64(round(mod))
-        )
-    end
-
-end
-
-# function State{S}(pos::SVector{3,S}, vel::SVector{3,S}, ang_vel::SVector{3,S}, att::SMatrix{3,3,S}, batt::S, stor::S, mod::Union{S, Int64}) where S <: Real
-#     return State{S}(
-#         pos, vel, ang_vel, att, batt, stor, mod
-#     )
-# end
-
-
-# function State{S}(pos::SVector{3}, vel::SVector{3}, ang_vel::SVector{3}, att::SMatrix{3,3}, batt::S, stor::S, mod::Int64) where S <: Real
-#     return State{Float64}(
-#         pos, vel, ang_vel, att, batt, stor, mod
-#     )
-# end
-
-function State{S}(pos::Vector{S}, vel::Vector{S}, ang_vel::Vector{S}, att::Matrix{S}, batt::S, stor::S, mod::Union{S,Int64}) where {S<:Real}
-    return State{S}(
-        SVector{3}(pos[1:3]),
-        SVector{3}(vel[1:3]),
-        SVector{3}(ang_vel[1:3]),
-        SMatrix{3,3}(att[1:3, 1:3]),
-        batt, stor, mod
-    )
-end
-
-function State{S}(sim::LEOSimulation) where {S<:Real}
-    return State{S}(
-        sim.initstate[1:3],
-        sim.initstate[4:6],
-        sim.initstate[7:9],
-        reshape(sim.initstate[10:18], (3, 3)),
-        sim.initstate[19],
-        sim.initstate[20],
-        sim.initstate[21]
-    )
-end
-
-function State{S}() where {S<:Real}
-    return State{S}(
-        zeros(3),
-        zeros(3),
-        zeros(3),
-        zeros(3, 3),
-        0.0,
-        0.0,
-        0.0
-    )
-end
-
-function +(a::State, b::State)
-    return State{typeof(a.position[1])}(
-        a.position .+ b.position,
-        a.velocity .+ b.velocity,
-        a.angular_velocity .+ b.angular_velocity,
-        a.attitude .+ b.attitude,
-        a.battery .+ b.battery,
-        a.storage .+ b.storage,
-        a.mode .+ b.mode
-    )
-end
-
-function *(a::Real, b::State)
-    return State{typeof(b.position[1])}(
-        a .* b.position,
-        a .* b.velocity,
-        a .* b.angular_velocity,
-        a .* b.attitude,
-        a * b.battery,
-        a * b.storage,
-        Int64(round(a * b.mode))
-    )
-end
-
 """
     integrate_system(dynamics, initial, tspan, dt, params)
 
@@ -146,7 +30,7 @@ function integrate_system(dynamics!::Function, initial::Vector{<:Real}, tspan::V
     soln = Dict("time" => time, "state" => zeros(length(initial), length(time)))
     soln["state"][:, 1] = initial
     first = true
-    for ti in eachindex(time)
+    @showprogress desc = "Total integration...\t" for ti in eachindex(time)
         if first
             first = false
             continue
@@ -468,18 +352,32 @@ function dynamics_attitude!(x::State{<:Real}, t::Real, maneuver::Maneuver, initi
     return dx
 end
 
-function orbit_dynamics!(x_dot::State{S}, x::State{S}, t::S, dt::S, params) where {S<:Real}
-    z = [0; 0; 1]
-    x_dot.velocity = x.position
-    x_dot.position = -params.earth.mu / (norm(x.position)^3) .* x.position + 3 * params.earth.mu * params.earth.j_2 * params.earth.r^2 / 2 / norm(x.position)^5 * ((5 / norm(x.position)^2 * (z' * x.position)^2 - 1) * x.position - 2 * (z' * x.position) * z)
+function state_to_dict(time::Vector{S}, states::Vector{State{S}}) where S<:Real
+    if length(states) != length(time) || length(states) == 0
+        error("Arguments must have same, nonzero length")
+    end
+    soln = Dict("time" => time, "state" => zeros(length(states[1]), length(time)))
+    for (k, state) in enumerate(states)
+        soln["state"][:,k] = [
+            state.position; 
+            state.velocity; 
+            state.angular_velocity;
+            state.attitude[:];
+            state.battery;
+            state.storage;
+            state.mode
+        ]
+    end
+    return soln
 end
 
-function simulate_orbit!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}}, times::Vector{S}, states::Vector{State{S}}) where {S<:Real}
-    # if "perturbations" in keys(sim_config)
-    #     if "forces" in keys(sim_config["perturbations"])
+function orbit_dynamics!(x_dot::State{S}, x::State{S}, t::S, dt::S, params) where {S<:Real}
+    z = @SVector [0; 0; 1]
+    x_dot.position = x.velocity
+    x_dot.velocity = -params.earth.mu / (norm(x.position)^3) .* x.position + 3 * params.earth.mu * params.earth.j_2 * params.earth.r^2 / 2 / norm(x.position)^5 * ((5 / norm(x.position)^2 * (z' * x.position)^2 - 1) * x.position - 2 * (z' * x.position) * z)
+end
 
-    #     end
-    # end
+function simulate_orbit!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}}, times::Vector{S}, states::Vector{State{S}}, targets::Matrix{S}) where {S<:Real}
 
     if length(states) != length(times)
         states = cat(states, Vector{State{S}}(undef, length(times) - length(states)))
@@ -490,10 +388,14 @@ function simulate_orbit!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
     k2 = State{S}()
     k3 = State{S}()
     k4 = State{S}()
-    @showprogress desc = "Propagating orbit..." for k in eachindex(times)
+    @showprogress desc = "Propagating orbit...\t" for k in eachindex(times)
         if k == 1
+            for (s, target) in enumerate(sim.mission.targets)
+                targets[s,k] = visibility(target, times[k], states[k].position)
+            end
             continue
         end
+
         dt = times[k] - times[k-1]
         orbit_dynamics!(k1, states[k-1], times[k-1], dt, sim)
         orbit_dynamics!(k2, states[k-1] + dt / 2 * k1, times[k-1] + dt / 2, dt, sim)
@@ -501,26 +403,163 @@ function simulate_orbit!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
         orbit_dynamics!(k4, states[k-1] + dt * k3, times[k-1] + dt, dt, sim)
 
         states[k] = states[k-1] + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+        
+        for (s, target) in enumerate(sim.mission.targets)
+            targets[s,k] = visibility(target, times[k], states[k].position)
+        end
     end
+end
 
-    # also compute visibilities and target at each loop step
+function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}}, times::Vector{S}, states::Vector{State{S}}, targets::Matrix{S}, target_choice::Vector{Int64}, reference_directions::Matrix{S}) where {S<:Real}
+    n_orbit = length(times)
+    k = 2
+    active_target = 0
+    # states[k].mode will track the mode
+    
+    # usage:
+    #   states[k].mode will give you a body vector
+    #   reference_direction[:, k] will give you an inertial direction to point it
+    #   target_selection[k] just might be helpful. Esp. visualization.
+
+    transitions = hcat(zeros(length(sim.mission.targets)), diff(targets, dims=2))
+
+    t_sun = findfirst(x->isa(x, SunTarget), sim.mission.targets)
+    t_mag = findfirst(x->isa(x, MagneticTarget), sim.mission.targets)
+    t_gs = findall(x->isa(x, GroundTarget), sim.mission.targets)
+
+    println("sun target", t_sun)
+    println("mag target", t_mag)
+    println("gs target", t_gs)
+
+    progbar = Progress(n_orbit, desc="Prioritizing targets...\t")
+    while k < length(times)
+        update!(progbar, k)
+        diffmask = targets[:,k] .> targets[:,k-1]
+
+        if any(targets[t_gs, k] .!= 0)     # any groundstation is visible
+            for (p, target) in enumerate(sim.mission.targets)
+                if targets[p,k] == 1 && isa(target, GroundTarget)
+                    active_target = p
+                    break
+                end
+            end
+            # target_set = findall(x->x == 1, targets[:,k])
+            # active_target = findfirst(x->isa(x, GroundTarget), sim.mission.targets[target_set])
+            # println(active_target)
+            # active_target = findfirst(x->x == 1, targets[:, k]) # default to the first groundstation
+            endtime_rel = findfirst(x->x == 0, targets[active_target, k:end])
+            
+            if isnothing(endtime_rel)
+                # sim ends before target goes out of view.
+                # save data for this target
+                k += 1
+                continue
+            end
+            endtime = endtime_rel + k - 1
+            duration = endtime - k
+
+            # if there is another target with a longer duration that starts during this duration, set it as active target and continue.
+            options = Vector{Pair{Int64, Int64}}(undef, 0) # record the (duration, index) for alternative targets
+            for (p, target) in enumerate(sim.mission.targets)
+                if isa(target, GroundTarget)
+                    if p == active_target
+                        continue
+                    end
+                    if any(transitions[p,k:endtime] .== 1)
+                        # this other target p starts a window during active_target's window.
+                        #   find out if that window has better duration.
+                        other_endtime_rel = findfirst(x -> x == 0, targets[p, k:end])
+                        if ~isnothing(other_endtime_rel)
+                            other_endtime = other_endtime_rel + k - 1
+                            other_duration = other_endtime - k
+                            if other_duration > duration
+                                push!(options, Pair(other_duration, p))
+                            end
+                        end
+                    end
+                end
+            end
+            if length(options) > 0
+                best_duration, best_index = findmax(x->x.first, options)
+                if best_duration <= 0
+                    throw("not incrementing (best)!")
+                end
+                active_target = best_index # update the target
+                [target_choice[j] = active_target for j in k:best_duration + k - 1]
+                [states[j].mode = Int64(downlink::Modes) for j in k:best_duration + k - 1]
+                # reference_directions[:,k:best_duration + k - 1] = ...
+                [reference_directions[:,j] = position_eci(sim.mission.targets[active_target], times[j]) for j in k:best_duration + k - 1]
+                k += best_duration # skip to the end of the window for this target
+                continue
+            else
+                if duration <= 0
+                    println(targets[active_target, k:k+3])
+                    throw("not incrementing (base)!")
+                end
+                [target_choice[j] = active_target for j in k:duration + k - 1]
+                [states[j].mode = Int64(downlink::Modes) for j in k:duration + k - 1]
+                # reference_directions[:,k:best_duration + k - 1] = ...
+                [reference_directions[:,j] = position_eci(sim.mission.targets[active_target], times[j]) for j in k:duration + k - 1]
+                k += duration
+                continue
+            end
+
+        elseif targets[t_mag, k] != 0   # in science latitude
+            # do science pointing
+            active_target = t_mag
+            target_choice[k] = active_target
+            states[k].mode = Int64(science::Modes)
+            reference_directions[:,k] = position_eci(sim.mission.targets[active_target], Vector(states[k].position), times[k])
+
+        elseif targets[t_sun, k] != 0    # sun is visible
+            # do sun pointing
+            active_target = t_sun
+            target_choice[k] = active_target
+            states[k].mode = Int64(charging::Modes)
+            reference_directions[:,k] = position_eci(sim.mission.targets[active_target], times[k])
+
+        else
+            states[k].mode = Int64(idle::Modes)
+            # do idle mode
+            # active_target = nothing
+        end
+        k += 1
+    end
+    
+    finish!(progbar)
+
+    
 end
 
 function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}})
 
-    # propagate orbit
-    #   along a coarse 1 second grid
-
     times = Vector{Float64}(sim.tspan[1]:1:sim.tspan[2])
     n_orbit = length(times)
+    
+    # allocate:
+    target_visibilities = Matrix{Float64}(undef, length(sim.mission.targets), n_orbit)
+    target_choice = zeros(Int64, n_orbit) .- 4
+    reference_directions = Matrix{Float64}(undef, 3, n_orbit) # pointing direction at each time
     states = Vector{State{Float64}}(undef, n_orbit)
-    states[1] = State{Float64}(sim) # define initial condition
+    # initial condition:
+    states[1] = State{Float64}(sim)
 
     println("simulating ", ((sim.tspan[2] - sim.tspan[1]) / 24 / 3600), " days")
-    simulate_orbit!(sim, sim_config, times, states)
+    # propagate orbit
+    simulate_orbit!(sim, sim_config, times, states, target_visibilities)
+    # assign target based on conop
+    simulate_conop!(sim, sim_config, times, states, target_visibilities, target_choice, reference_directions)
 
-    #   compute visibilities
-    #   run conop logic for targeting
+    # fudging this for later usage:
+    [state.attitude = diagm([1.0;1.0;1.0]) for state in states]
+
+    # run conop logic for targeting
+    #   note: this is a priori---pointing logic can be interrupted by tumbling or low power triggers
+    # flow:
+    #   1. visibility masks and position -> mode
+    #   2. mode -> target
+    #   3. target and last target and -> attitude reference
+    #   4. (justification -> attitude reference timing)
     #
     # attitude control
     #   along a fine grid, with steps defined by the agilitoid
@@ -532,6 +571,5 @@ function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,Stri
     #
     # return state trajectory, time, target visibility mask
     #
-    return times, states
-
+    return times, states, target_visibilities, target_choice
 end

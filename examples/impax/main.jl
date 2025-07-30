@@ -2,12 +2,16 @@ using OpenSOAP, LinearAlgebra
 import SatelliteToolboxTransformations
 using GLMakie
 
+using Profile, PProf
+
 @doc raw"""
     main()
 
 This is a boilerplate example for running an orbit simulation, checking target visibility, and writing outputs.
 """
 function main()
+
+    Profile.clear()
     println("loading transformations...")
     eops = SatelliteToolboxTransformations.fetch_iers_eop()
 
@@ -19,7 +23,7 @@ function main()
     end
 
     println("trying new code...")
-    times, states = simulate(sim, Dict{String,String}())
+    @profile times, states, target_visibilities, target_choice = simulate(sim, Dict{String,String}())
 
     println("integrating...")
     soln = integrate_system(dynamics_orbit!, sim.initstate, sim.tspan, sim.dt, sim)
@@ -45,7 +49,12 @@ function main()
     attitude_BI = [reshape(soln["state"][10:18, k], 3, 3) for k in 1:length(time)]
     battery = soln["state"][19, :]
     storage = soln["state"][20, :]
-    mode = soln["state"][21, :]
+    # mode = soln["state"][21, :]
+
+    x_I = [state.position[1] for state in states]
+    y_I = [state.position[2] for state in states]
+    z_I = [state.position[3] for state in states]
+    mode = [state.mode for state in states]
 
     # compute when each target is visible from spacecraft:
     println("computing visibilities...")
@@ -62,9 +71,32 @@ function main()
 
     # uncomment for an example plot of battery level:
     GLMakie.activate!(title="OpenSOAP")
-    fig = Figure(size=(600, 400)) # create a new figure
+    fig = Figure(size=(1400, 900)) # create a new figure
     display(fig) # show the Figure on the screen
 
-    ax = Axis(fig[1, 1], xlabel="time [s]", ylabel="battery level [J]") # create an Axis to plot into
-    lines!(ax, time, battery, linewidth=0.5)   # lineplot of battery over time
+    plot_moc!(fig, times, states, target_visibilities, target_choice, zeros(3,3,1), sim)
+
+    # out = [(target_visibilities[t,:], target) for (t, target) in enumerate(sim.mission.targets) if isa(target, SunTarget)]
+    # sun_vis = out[1][1]
+    # sun = out[1][2]
+
+    # sun_I = position_eci(sun, times[1])
+    # sun_I = 6371e3 * 1.25 * sun_I / norm(sun_I)
+
+    # times_d = (times .- times[1])/3600/24
+    # target_idx = [t for t in eachindex(sim.mission.targets)]
+    # target_labels = [target.name for target in sim.mission.targets]
+
+    # ax1 = Axis(fig[1, 1], xlabel="time [days]", ylabel="Mode") # create an Axis to plot into
+    # lines!(ax1, times_d, mode, linewidth=0.5)   # lineplot of battery over time
+    # ax2 = Axis(fig[2,1], xlabel="time [days]", ylabel="target visible", yticks = (target_idx, target_labels))
+
+    # # heatmap!(ax2, Resampler(target_visibilities'), colormap=cgrad(["white","black"],2))
+    # plot_visibilities!(ax2, times_d, states, target_visibilities, target_choice, sim)
+    # linkxaxes!(ax1,ax2)
+    # ax3 = LScene(fig[3,1])
+    # lines!(ax3, x_I, y_I, z_I)
+    # scatter!(ax3, sun_I, color=:yellow)
+
+    # pprof()
 end

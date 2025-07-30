@@ -351,3 +351,47 @@ function slew()
     # back out attitude trajectory and plot.
 
 end
+
+function vectors_frames()
+    GLMakie.activate!()
+    fig = Figure(size=(400,400))
+    set_theme!(theme_light())
+
+    ax = LScene(
+        fig[1, 1],
+        show_axis=false
+    )
+        
+    basis = diagm([1.0,1.0,1.0])
+    cols = [:red, :green, :blue]
+    lscale = 0.5
+    wscale = 0.02
+    C1 = r_random()
+    C2 = r_random()
+    C3 = basis
+
+    r1 = [1,0,1]
+    r2 = [0,1,1]
+    r3 = zeros(3)
+
+    Cs = (C1, C2, C3)
+    rs = (r1, r2, r3)
+    for d in zip(Cs, rs)
+        C = d[1]
+        r = d[2]
+
+        tails = [Point3f(r) for k in 1:3]
+        heads = [Vec3f(lscale*C*basis[:,k]) for k in 1:3]
+        for k in 1:3
+            arrows!(
+                tails,
+                heads,
+                color=cols,
+                linewidth = wscale,
+                arrowsize = Vec3f(wscale,wscale,wscale)
+            )
+        end
+    end
+
+    display(fig)
+end
