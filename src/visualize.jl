@@ -1485,13 +1485,31 @@ function Makie.plot!(polyplot::PolyPlot{<:Tuple{Polyhedron}})
     polyplot
 end
 
-function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}, target_visibilities::Matrix{S}, target_choice::Vector{Int64}, reference_attitude::Array{S, 3}, sim::LEOSimulation) where S<:Real
+function plot_moc!(
+    fig::Makie.Figure,
+    times::Vector{S}, 
+    states::Vector{State{S}}, 
+    target_visibilities::Matrix{S}, 
+    target_choice::Vector{Int64}, 
+    reference_directions::Matrix{S}, 
+    reference_attitude::Array{S, 3}, 
+    sim::LEOSimulation
+    ) where S<:Real
+
     eops = SatelliteToolboxTransformations.fetch_iers_eop()
     texture = load_earth_texture_to_ecef(joinpath("assets","map_diffuse.png"))
-    model = load(joinpath("assets","IMPAX_mech_clean.obj"))
+
+    model = nothing
+    try 
+        # model = load(joinpath("assets","IMPAX_mech_clean.obj"))
+        model = load(joinpath("assets","IMPAX_mech_clean.obj"))
+    catch
+        model = load(joinpath("assets","enterprise-d.obj"))
+    end
     axes_colors = [:red, :green, :blue]
 
-    al = AmbientLight(RGBf(243/255, 241/255, 230/255))
+    # al = AmbientLight(RGBf(243/255, 241/255, 230/255))
+    al = AmbientLight(RGBf(0.4,0.4,0.4))
     ax_globe = LScene(
         fig[1:2,1], 
         show_axis = false, 
@@ -1524,6 +1542,8 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
     lb_sc_path = Label(layout_sc_options[5, 2], "path", halign=:left)
     cb_sc_mode = Toggle(layout_sc_options[6,1], active = false, halign=:right)
     lb_sc_mode = Label(layout_sc_options[6,2], "mode", halign=:left)
+    cb_sc_dirs = Checkbox(layout_sc_options[7,1], checked = false, halign=:right)
+    lb_sc_dirs = Label(layout_sc_options[7,2], "directions", halign=:right)
     
     Label(layout_env_options[1, 1],
         "Environment",
@@ -1549,7 +1569,7 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
     # move the plotted timestep with arrow keys:
     timestep = Observable(1)
     on(events(ax_globe).keyboardbutton) do event
-        if event.action == Keyboard.press || event.action == Keyboard.repeat
+        if event.action == Keyboard.press #|| event.action == Keyboard.repeat
             stepsize = 10
             if Keyboard.left_shift in events(ax_globe).keyboardstate || Keyboard.right_shift in events(ax_globe).keyboardstate
                 stepsize = 500
@@ -1568,11 +1588,11 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
     
     # plotting spacecraft position
     mode_colors = Dict(
-        idle::Modes => [0.0, 0.0, 1.0],
-        science::Modes => [1.0, 0.0, 1.0],
-        charging::Modes => [1.0, 1.0, 0.0],
-        downlink::Modes => [0.0, 1.0, 0.0],
-        safe::Modes => [0.2, 0.2, 0.2]
+        idle::Modes => [42, 133, 255] ./ 255,
+        science::Modes => [206, 155, 255] ./ 255,
+        charging::Modes => [225, 220, 90] ./ 255,
+        downlink::Modes => [157, 226, 107] ./ 255,
+        safe::Modes => [110, 110, 110] ./ 255
     )
     tail_gap = 100
     tail_length = Int(floor(2*pi*sqrt(norm(states[1].position)^3/sim.earth.mu) / (times[2] - times[1]))) - tail_gap
@@ -1588,12 +1608,12 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
     end
     color_trail = lift(time_range) do time_range
         if cb_sc_mode.active[]
-            return [RGBAf(mode_colors[Modes(states[k].mode)]..., (k - time_range[1])/length(time_range)) for k in time_range]
+            return [RGBA(mode_colors[Modes(states[k].mode)]..., (k - time_range[1])/length(time_range)) for k in time_range]
         else
-            return [RGBAf(0.1,0.2,0.9, (k - time_range[1])/length(time_range)) for k in time_range]
+            return [RGBA([42, 133, 255]./255..., (k - time_range[1])/length(time_range)) for k in time_range]
         end
     end
-    
+
     scatter!(
         ax_globe,
         pos,
@@ -1605,7 +1625,7 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
         ax_globe,
         pos_hist,
         color=color_trail,
-        linewidth=2,
+        linewidth=8,
         fxaa=true,
         visible=cb_sc_path.checked
     )
@@ -1638,17 +1658,29 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
         color=axes_colors,
         linewidth=ecef_arrow_scale*r_E,
         arrowsize=Vec3f(ecef_arrow_scale*r_E, ecef_arrow_scale*r_E, ecef_arrow_scale*3*r_E),
+        shading=NoShading,
         visible=cb_env_axes.checked
     )
 
     # drawing groundstations
     ground_targets = [target for target in sim.mission.targets if isa(target, GroundTarget)]
-    gs_pos_ecef = [Point3f(position_ecef(target, times[1])) for target in ground_targets]
-    C_IF0 = r_ecef_to_eci(ITRF(), J2000(), times[1]/24/3600, eops)
+    sun_target = [target for target in sim.mission.targets if isa(target, SunTarget)]
+    if length(sun_target) == 0
+        throw("No SunTarget was populated in sim.mission.targets!")
+    end
+    gs_pos_ecef = [Point3f(1.001*position_ecef(target, times[1])) for target in ground_targets]
 
     gs_pts = lift(C_IF) do C_IF
         return [Point3f(C_IF*pos) for pos in gs_pos_ecef]
     end
+
+    sunlight_dir = lift(timestep) do timestep
+        # note: this is used to locate a Makie.DirectionalLight object, which wants
+        #   the direction of light rays, not the position of the emitter.
+        return Vec3f(-SatelliteToolboxCelestialBodies.sun_position_mod(times[timestep]/3600/24))
+    end
+    dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), sunlight_dir)
+    push!(ax_globe.scene.lights, dl)
 
     # making surface texture:
     nθ = length(texture[:,1])
@@ -1700,7 +1732,10 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
         Y,
         Z,
         color=texture,
-        diffuse=0.8,
+        diffuse=Vec3f(0.6),
+        specular=Vec3f(0.2),
+        shininess=0.2,
+        invert_normals=true,
         visible=cb_env_globe.checked
     )
 
@@ -1728,7 +1763,7 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
     scatter!(
         ax_globe,
         gs_pts,
-        color=:grey,
+        color=RGBf(mode_colors[downlink::Modes]...),
         visible=cb_env_gs_loc.checked
     )
 
@@ -1737,21 +1772,28 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
     mag_target = sim.mission.targets[mag_k]
 
     field_step = 50
+    ref_step = 10
 
     n_field = tail_length ÷ field_step
+    n_ref = tail_length ÷ ref_step
     field_tail = Observable([Point3f(0.0) for k in 1:n_field])
     field_head = Observable([Point3f(0.0) for k in 1:n_field])
     field_color = Observable([RGBAf(0.0, 0.0, 0.0, 0.0) for k in 1:n_field])
     field_index = Observable([0.0 for k in 1:n_field])
     field_alpha = Observable([0.0 for k in 1:n_field])
 
+    ref_tail = Observable([Point3f(0.0) for k in 1:n_ref])
+    ref_head = Observable([Point3f(0.0) for k in 1:n_ref])
+    ref_color = Observable([RGBAf(0.0, 0.0, 0.0, 0.0) for k in 1:n_ref])
+    ref_alpha = Observable([0.0 for k in 1:n_ref])
+
     on(time_range) do time_range
         first_index = time_range[end] - tail_length + 1
-        sparse_range = first_index:field_step:time_range[end]
-        sparse_range = sparse_range[1:n_field]
+        sparse_field_range = first_index:field_step:time_range[end]
+        sparse_field_range = sparse_field_range[1:n_field]
         # println("length check: ", length(sparse_range), ", ", n_field)
         b_idx = 1
-        for k in sparse_range
+        for k in sparse_field_range
             if k < 1
                 field_tail[][b_idx] = Point3f(0.0)
                 field_head[][b_idx] = Point3f(0.0)
@@ -1764,7 +1806,6 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
 
                 field_tail[][b_idx] = Point3f(states[k].position)
                 field_head[][b_idx] = Point3f(igrf_eci ./ norm(igrf_eci))
-                # field_color[][b_idx] = RGBAf(1.0 - norm(igrf_eci), 0.0, norm(igrf_eci), b_idx / n_field)
                 field_index[][b_idx] = norm(igrf_eci)
             end
             b_idx += 1
@@ -1772,11 +1813,35 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
         max_norm = max(field_index[]...)
         [field_color[][c] = RGBAf(1.0 - field_index[][c]/max_norm, field_index[][c]/max_norm, 1.0, c / n_field) for c in 1:b_idx-1]
         [field_alpha[][c] = c/n_field for c in 1:b_idx-1]
+        
         notify(field_tail)
         notify(field_head)
         notify(field_color)
         notify(field_index)
         notify(field_alpha)
+        
+        sparse_ref_range = first_index:ref_step:time_range[end]
+        sparse_ref_range = sparse_ref_range[1:n_ref]
+        r_idx = 1
+        for k in sparse_ref_range
+            if k < 1
+                ref_tail[][r_idx] = Point3f(0.0)
+                ref_head[][r_idx] = Point3f(0.0)
+                ref_color[][r_idx] = RGBAf(0.0,0.0,0.0,0.0)
+                ref_alpha[][r_idx] = 0.0
+            else
+                ref_tail[][r_idx] = Point3f(states[k].position)
+                p = reference_directions[:,k]
+                ref_head[][r_idx] = Point3f(p ./ norm(p))
+                ref_color[][r_idx] = RGBAf(mode_colors[Modes(states[k].mode)]..., r_idx / n_ref)
+            end
+            r_idx += 1
+        end
+        [ref_alpha[][c] = c/n_ref for c in 1:r_idx-1]
+        notify(ref_tail)
+        notify(ref_head)
+        notify(ref_color)
+        notify(ref_alpha)
     end
 
     width_scale = 0.005
@@ -1797,7 +1862,20 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
         # align=:center
         # diffuse=0.8,
         # backlight=1.0
+        shading=NoShading,
         visible=cb_env_field.checked
+    )
+    arrows!(
+        ax_globe,
+        ref_tail,
+        ref_head,
+        color=ref_color,
+        alpha=ref_alpha,
+        linewidth=r_E*width_scale,
+        lengthscale=r_E*length_scale,
+        arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
+        shading=NoShading,
+        visible=cb_sc_dirs.checked
     )
 
 
@@ -1823,6 +1901,7 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
         color=axes_colors,
         linewidth=body_arrow_scale*r_E,
         arrowsize=Vec3f(body_arrow_scale*r_E, body_arrow_scale*r_E, body_arrow_scale*3*r_E),
+        shading=NoShading,
         visible = cb_sc_axes.checked
     )
 
@@ -1832,7 +1911,7 @@ function plot_moc!(fig::Makie.Figure, times::Vector{S}, states::Vector{State{S}}
         ax_globe,
         model,
         color=:grey,
-        alpha=0.5,
+        alpha=0.7,
         space=:data,
         visible=cb_sc_cad.checked
     )
