@@ -65,9 +65,10 @@ end
     safe 
     idle
     detumble 
-    downlink 
+    pointing
     charging 
     science
+    downlink 
 end
 
 function State{S}(pos::Vector{S}, vel::Vector{S}, ang_vel::Vector{S}, att::Matrix{S}, batt::S, stor::S, mod::Union{S,Int64}) where {S<:Real}
@@ -219,10 +220,12 @@ end
 @doc raw"""
     r_min_arc(x_A, x_B)
 
-Return the DCM implementing the minimum arc-length rotation that maps vector `x_A` into vector `x_B`. This uses the axis-angle parameterization to compute the DCM.
+Return the DCM implementing the minimum arc-length rotation that maps vector `x_A` onto vector `x_B`. This uses the axis-angle parameterization to compute the DCM. 
+
+Note: if you pass both `x_A` and `x_B` in the same reference frame (the initial frame), then the result should premultiply the initial frame to get the new attitude.
 """
-function r_min_arc(x_A::Vector{<:Real}, x_B::Vector{<:Real})::Matrix{<:Real}
-    ax = LinearAlgebra.cross(x_A, x_B) / norm(x_A) / norm(x_B)
+function r_min_arc(x_A::AbstractVector{<:Real}, x_B::AbstractVector{<:Real})::Matrix{<:Real}
+    ax = LinearAlgebra.cross(x_A, x_B)
     ax = ax / norm(ax)
     cang = x_A' * x_B / norm(x_A) / norm(x_B)
 
@@ -277,9 +280,9 @@ end
 @doc raw"""
   rotinterp(R0, Rf, n)
 
-Interpolate rotation matrices between ``R0`` and ``Rf``, in ``n`` steps.
+Interpolate rotation matrices between ``R0`` and ``Rf``, in ``n`` steps. The returned sequence does not contain the endpoint ``Rf``.
 """
-function rotinterp(R0, Rf, n)
+function rotinterp(R0::AbstractMatrix{<:Real}, Rf::AbstractMatrix{<:Real}, n::Int)
     # Rf0 = (Rf' * R0)
     Rf0 = R0' * Rf
     (ax, ang) = axisangle(Rf0)
@@ -293,4 +296,58 @@ function rotinterp(R0, Rf, n)
     end
 
     return R
+end
+
+@doc raw"""
+    lininterp(v0, vf, n)
+
+Interpolate vectors between ``v0`` and ``vf``, in ``n`` steps. The returned sequence does not contain the endpoint ``vf``.
+"""
+function lininterp(v0::AbstractVector{<:Real}, vf::AbstractVector{<:Real}, n::Int)
+    m = length(v0)
+    if length(vf) != m 
+        throw("v0 and vf must be same length!")
+    end
+    vdir = vf - v0
+    V = Matrix{typeof(v0[1])}(undef, m, n)
+    for k in 1:n
+        V[:,k] = v0 + (k - 1) / n * vdir
+    end
+
+    return V
+end
+
+function interp(p0::Real, pf::Real, n::Int)
+    return [p0 + (pf - p0)*(k - 1)/n for k in 1:n]
+end
+
+@doc raw"""
+    lininterp(s0, sf, n)
+
+Interpolate ``State``s between ``s0`` and ``sf``, in ``n`` steps. The returned sequence does not contain the endpoint ``sf``. 
+Vector fields are linearly interpolated, the attitude field is interpolated in ```SO(3)```, and mode fields are held at the starting value.
+"""
+function interp(s0::State{<:Real}, sf::State{<:Real}, n::Int)
+    T = typeof(s0.position[1])
+    s = Vector{State{T}}()
+
+    positions = lininterp(s0.position, sf.position, n)
+    velocities = lininterp(s0.velocity, sf.velocity, n)
+    angular_velocities = lininterp(s0.angular_velocity, sf.angular_velocity, n)
+    attitudes = rotinterp(s0.attitude, sf.attitude, n)
+    batteries = interp(s0.battery, sf.battery, n)
+    storages = interp(s0.storage, sf.storage, n)
+    modes = s0.mode*ones(n)
+
+    for k in 1:n
+        push!(s, State{T}(positions[:,k], velocities[:,k], angular_velocities[:,k], attitudes[:,:,k], batteries[k], storages[k], modes[k]))
+        #s[k].position = positions[:,k]
+        #s[k].velocity = velocities[:,k]
+        #s[k].angular_velocity = angular_velocities[:,k]
+        #s[k].attitude = attitudes[:,:,k]
+        #s[k].battery = batteries[k]
+        #s[k].storage = storages[k]
+        #s[k].mode = modes[k]
+    end
+    return s
 end

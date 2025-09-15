@@ -1,6 +1,7 @@
 using GLMakie, Colors, GeometryBasics, LinearAlgebra, Rotations
 using SatelliteToolboxBase, SatelliteToolboxTransformations
 using FileIO
+using Distributions
 
 function lookat_orbit!(ax::Makie.LScene, t_jd_s, soln::Dict)
     dist_scale = 4
@@ -1492,7 +1493,7 @@ function plot_moc!(
     target_visibilities::Matrix{S}, 
     target_choice::Vector{Int64}, 
     reference_directions::Matrix{S}, 
-    reference_attitude::Array{S, 3}, 
+    reference_attitude::Dict{Int64, Tuple{Vector{S}, Vector{State{S}}}}, 
     sim::LEOSimulation
     ) where S<:Real
 
@@ -1511,18 +1512,20 @@ function plot_moc!(
     # al = AmbientLight(RGBf(243/255, 241/255, 230/255))
     al = AmbientLight(RGBf(0.4,0.4,0.4))
     ax_globe = LScene(
-        fig[1:2,1], 
+        fig[1:3,1], 
         show_axis = false, 
         scenekw = (
             # lights=[dl, al], 
             lights = [al],
             # backgroundcolor=:black, 
             clear=true
-        )
+        ),
+        tellheight = false
     )
 
-    layout_sc_options = GridLayout(fig[1, 2], tellheight = false)
-    layout_env_options = GridLayout(fig[2, 2], tellheight = false)
+    layout_sc_options = GridLayout(fig[1, 2], tellheight = true)
+    layout_env_options = GridLayout(fig[2, 2], tellheight = true)
+    layout_cam_options = GridLayout(fig[3, 2], tellheight = true)
 
     Label(layout_sc_options[1, 1],
         "Spacecraft",
@@ -1530,8 +1533,9 @@ function plot_moc!(
         lineheight = 1.0,
         fontsize = 16.0f0
     )
-    rowgap!(layout_env_options, 4)
-    colgap!(layout_env_options, 4)
+    rowgap!(layout_sc_options, 4)
+    colgap!(layout_sc_options, 4)
+    colsize!(layout_sc_options, 1, 50)
     cb_sc_axes = Checkbox(layout_sc_options[2, 1], checked = false, halign=:right)
     lb_sc_axes = Label(layout_sc_options[2, 2], "axes", halign=:left)
     cb_sc_cad = Checkbox(layout_sc_options[3, 1], checked = false, halign=:right)
@@ -1543,7 +1547,9 @@ function plot_moc!(
     cb_sc_mode = Toggle(layout_sc_options[6,1], active = false, halign=:right)
     lb_sc_mode = Label(layout_sc_options[6,2], "mode", halign=:left)
     cb_sc_dirs = Checkbox(layout_sc_options[7,1], checked = false, halign=:right)
-    lb_sc_dirs = Label(layout_sc_options[7,2], "directions", halign=:right)
+    lb_sc_dirs = Label(layout_sc_options[7,2], "directions", halign=:left)
+    cb_sc_attref = Checkbox(layout_sc_options[8,1], checked = false, halign=:right)
+    lb_sc_attref = Label(layout_sc_options[8,2], "attitude reference", halign=:left)
     
     Label(layout_env_options[1, 1],
         "Environment",
@@ -1553,16 +1559,33 @@ function plot_moc!(
     )
     rowgap!(layout_env_options, 4)
     colgap!(layout_env_options, 4)
+    colsize!(layout_env_options, 1, 50)
     cb_env_axes = Checkbox(layout_env_options[2, 1], checked = false, halign=:right)
     lb_env_axes = Label(layout_env_options[2, 2], "axes", halign=:left)
     cb_env_globe = Checkbox(layout_env_options[3, 1], checked = true, halign=:right)
     lb_env_globe = Label(layout_env_options[3, 2], "globe", halign=:left)
     cb_env_grid = Checkbox(layout_env_options[4, 1], checked = false, halign=:right)
     lb_env_grid = Label(layout_env_options[4, 2], "grids", halign=:left)
-    cb_env_field = Checkbox(layout_env_options[5, 1], checked = false, halign=:right)
-    lb_env_field = Label(layout_env_options[5, 2], "B-field", halign=:left)
-    cb_env_gs_loc = Checkbox(layout_env_options[6, 1], checked = false, halign=:right)
-    lb_env_gs_loc = Label(layout_env_options[6, 2], "groundstations", halign=:left)
+    cb_env_gs_loc = Checkbox(layout_env_options[5, 1], checked = false, halign=:right)
+    lb_env_gs_loc = Label(layout_env_options[5, 2], "groundstations", halign=:left)
+    cb_env_orbit_field = Checkbox(layout_env_options[6, 1], checked = false, halign=:right)
+    lb_env_field = Label(layout_env_options[6, 2], "orbit B-field", halign=:left)
+    cb_env_global_field = Checkbox(layout_env_options[7, 1], checked = false, halign=:right)
+    lb_env_field = Label(layout_env_options[7, 2], "global B-field", halign=:left)
+
+    Label(layout_cam_options[1, 1],
+        "Camera",
+        justification = :center,
+        lineheight = 1.0,
+        fontsize = 16.0f0
+    )
+    rowgap!(layout_cam_options, 4)
+    colgap!(layout_cam_options, 4)
+    colsize!(layout_cam_options, 1, 50)
+    
+    cb_cam_spin = Button(layout_cam_options[2, 1], label="spin", halign=:right)
+    # lb_cam_spin = Label(layout_ctrl_options[2, 2], "spin", halign=:left)
+
 
     colsize!(fig.layout, 1, Relative(3/4))
 
@@ -1585,17 +1608,35 @@ function plot_moc!(
             end
         end
     end
+
+    on(cb_cam_spin.clicks, priority=1) do c
+        # eye = Vec3d(2*r_E*cos(ang),2*r_E*sin(ang),0)
+        @async for ang in 0:0.1:2*pi
+            cam = Makie.cameracontrols(ax_globe.scene)
+            # update_cam!(ax_globe.scene, cam, Vec3f(2*r_E*cos(ang),2*r_E*sin(ang),0), Vec3f(0.0))
+            cam.lookat[] = Vec3f(0.0)
+            zoom = norm(cam.eyeposition[])
+            cam.eyeposition[] = Vec3f(zoom*cos(ang),zoom*sin(ang),0)
+            cam.upvector[] = Vec3f(0.0,0.0,1.0)
+            update_cam!(ax_globe.scene, cam)
+            sleep(1.0/30)
+        end
+        Consume(true)
+    end
     
     # plotting spacecraft position
     mode_colors = Dict(
+        safe::Modes => [110, 110, 110] ./ 255,
         idle::Modes => [42, 133, 255] ./ 255,
-        science::Modes => [206, 155, 255] ./ 255,
+        pointing::Modes => [42, 42, 42] ./ 255,
         charging::Modes => [225, 220, 90] ./ 255,
+        science::Modes => [206, 155, 255] ./ 255,
         downlink::Modes => [157, 226, 107] ./ 255,
-        safe::Modes => [110, 110, 110] ./ 255
     )
-    tail_gap = 100
-    tail_length = Int(floor(2*pi*sqrt(norm(states[1].position)^3/sim.earth.mu) / (times[2] - times[1]))) - tail_gap
+    # tail length of 1 orbit, minus the tail gap
+    orbit_length = Int(floor(2*pi*sqrt(norm(states[1].position)^3/sim.earth.mu) / sim.dt))
+    tail_gap = Int(floor(orbit_length/20))
+    tail_length = orbit_length - tail_gap
     pos = lift(timestep) do timestep
         return Point3f(states[timestep].position)
     end
@@ -1782,10 +1823,24 @@ function plot_moc!(
     field_index = Observable([0.0 for k in 1:n_field])
     field_alpha = Observable([0.0 for k in 1:n_field])
 
+    n_global_field = 10000
+    global_field_lla = [Point3f(rand(Uniform(-pi/2,pi/2)), rand(Uniform(-pi,pi)), rand(Uniform(r_E,3*r_E))) for k in 1:n_global_field]
+    global_field_tail = Observable([Point3f(0.0) for k in 1:n_global_field])
+    global_field_head = Observable([Point3f(0.0) for k in 1:n_global_field])
+    global_field_index = Observable([0.0 for k in 1:n_global_field])
+
     ref_tail = Observable([Point3f(0.0) for k in 1:n_ref])
     ref_head = Observable([Point3f(0.0) for k in 1:n_ref])
     ref_color = Observable([RGBAf(0.0, 0.0, 0.0, 0.0) for k in 1:n_ref])
     ref_alpha = Observable([0.0 for k in 1:n_ref])
+
+    man_x = Observable([Point3f(0.0)])
+    man_y = Observable([Point3f(0.0)])
+    man_z = Observable([Point3f(0.0)])
+    man_col_x = Observable([RGBAf(0.0,0.0,0.0,0.0)])
+    man_col_y = Observable([RGBAf(0.0,0.0,0.0,0.0)])
+    man_col_z = Observable([RGBAf(0.0,0.0,0.0,0.0)])
+    man_scale = r_E*0.1
 
     on(time_range) do time_range
         first_index = time_range[end] - tail_length + 1
@@ -1820,6 +1875,20 @@ function plot_moc!(
         notify(field_index)
         notify(field_alpha)
         
+        # build global magnetic field
+        for (i,p) in enumerate(global_field_lla)
+            timeindex = time_range[end]
+            igrf_pos_ecef = geocentric_to_ecef(Vector(p))
+            C_IF_loc = r_ecef_to_eci(ITRF(), J2000(), times[timeindex]/24/3600, eops)
+            igrf_global_eci = C_IF_loc*position_ecef(mag_target, igrf_pos_ecef, times[timeindex])
+            global_field_tail[][i] = Point3f(C_IF_loc*igrf_pos_ecef)
+            global_field_head[][i] = Point3f(igrf_global_eci ./ norm(igrf_global_eci))
+            global_field_index[][i] = norm(igrf_global_eci)
+        end
+        notify(global_field_tail)
+        notify(global_field_head)
+        notify(global_field_index)
+
         sparse_ref_range = first_index:ref_step:time_range[end]
         sparse_ref_range = sparse_ref_range[1:n_ref]
         r_idx = 1
@@ -1842,7 +1911,62 @@ function plot_moc!(
         notify(ref_head)
         notify(ref_color)
         notify(ref_alpha)
+
+        # maneuvering
+        m_idx = [key for key in keys(reference_attitude) if key in time_range[1]..time_range[end]]
+
+        man_x[] = [Point3f(NaN)]
+        man_y[] = [Point3f(NaN)]
+        man_z[] = [Point3f(NaN)]
+        ll = 0
+        for m in m_idx
+            man = reference_attitude[m]
+            man_states = man[2]
+            push!(man_x[], Point3f(man_states[1].position))
+            push!(man_y[], Point3f(man_states[1].position))
+            push!(man_z[], Point3f(man_states[1].position))
+            append!(man_x[], Point3f[s.position + man_scale*s.attitude[:,1] for s in man_states])
+            append!(man_y[], Point3f[s.position + man_scale*s.attitude[:,2] for s in man_states])
+            append!(man_z[], Point3f[s.position + man_scale*s.attitude[:,3] for s in man_states])
+            push!(man_x[], Point3f(man_states[end].position))
+            push!(man_y[], Point3f(man_states[end].position))
+            push!(man_z[], Point3f(man_states[end].position))
+            push!(man_x[], Point3f(NaN))
+            push!(man_y[], Point3f(NaN))
+            push!(man_z[], Point3f(NaN))
+	        tl = length(man_states) + 3 - ll
+	        ll = length(man_states) + 3
+            append!(man_col_x[],[RGBAf(1.0,0.0,0.0,c/tl) for c in 1:tl])
+            append!(man_col_y[],[RGBAf(0.0,1.0,0.0,c/tl) for c in 1:tl])
+            append!(man_col_z[],[RGBAf(0.0,0.0,1.0,c/tl) for c in 1:tl])
+        end
+        notify(man_x)
+        notify(man_y)
+        notify(man_z)
+        notify(man_col_x)
+        notify(man_col_y)
+        notify(man_col_z)
     end
+
+    lines!(
+        ax_globe,
+        man_x,
+        # color=man_col_x,
+        color=:red,
+        visible=cb_sc_attref.checked
+    )
+    lines!(
+        ax_globe,
+        man_y,
+        color=:green,
+        visible=cb_sc_attref.checked
+    )
+    lines!(
+        ax_globe,
+        man_z,
+        color=:blue,
+        visible=cb_sc_attref.checked
+    )
 
     width_scale = 0.005
     length_scale = 0.1
@@ -1851,10 +1975,11 @@ function plot_moc!(
         ax_globe,
         field_tail,
         field_head,
-        color=field_color,
+        # color=field_color
+        color=field_index,
         # color=(field_index, field_alpha),
-        alpha=field_alpha,
-        colormap=:cool,
+        # alpha=field_alpha,
+        colormap=:berlin,
         # colormap=:cool,
         linewidth=r_E*width_scale,
         lengthscale=r_E*length_scale,
@@ -1863,7 +1988,26 @@ function plot_moc!(
         # diffuse=0.8,
         # backlight=1.0
         shading=NoShading,
-        visible=cb_env_field.checked
+        visible=cb_env_orbit_field.checked
+    )
+    arrows!(
+        ax_globe,
+        global_field_tail,
+        global_field_head,
+        # color=field_color
+        color=global_field_index,
+        # color=(field_index, field_alpha),
+        # alpha=field_alpha,
+        colormap=:matter,
+        # colormap=:cool,
+        linewidth=r_E*width_scale,
+        lengthscale=r_E*length_scale,
+        arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
+        # align=:center
+        # diffuse=0.8,
+        # backlight=1.0
+        shading=NoShading,
+        visible=cb_env_global_field.checked
     )
     arrows!(
         ax_globe,
@@ -1916,7 +2060,7 @@ function plot_moc!(
         visible=cb_sc_cad.checked
     )
 
-    scale!(cad_mesh, model_scale, model_scale, model_scale)
+    GLMakie.scale!(cad_mesh, model_scale, model_scale, model_scale)
 
     on(C_BI) do C_BI
         q_mesh = Makie.Quaternion(C_BI)
