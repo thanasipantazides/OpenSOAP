@@ -3,14 +3,28 @@ import LinearAlgebra, LinearAlgebra.cross
 import Makie
 
 import Base: +, *
+
+# Define spacecraft operational modes (must come first!)
+@enum Modes begin 
+    safe
+    idle
+    detumble
+    pointing
+    charging
+    science
+    downlink
+end
+
+# Define spacecraft state
 mutable struct State{T<:Real}
-    position::SVector{3,T}
-    velocity::SVector{3,T}
-    angular_velocity::SVector{3,T}
-    attitude::SMatrix{3,3,T}
-    battery::T
-    storage::T
-    mode::Int64
+    position::SVector{3,T}         # spacecraft position (m)
+    velocity::SVector{3,T}         # spacecraft velocity (m/s)
+    angular_velocity::SVector{3,T} # spacecraft angular velocity (rad/s)
+    attitude::SMatrix{3,3,T}       # direction cosine matrix (body -> inertial)
+    battery::T                     # current battery energy (J or Wh)
+    storage::T                     # onboard data storage used (bytes)
+    mode::Modes                    # operational mode (using the enum above)
+end
 
     # State{S}(pos::Vector{S}, vel::Vector{S}, ang_vel::Vector{S}, att::Matrix{S}, batt::S, stor::S, mod::Int64) where S<:Number = begin
     #     new(
@@ -46,7 +60,7 @@ mutable struct State{T<:Real}
         )
     end
 
-end
+
 
 # function State{S}(pos::SVector{3,S}, vel::SVector{3,S}, ang_vel::SVector{3,S}, att::SMatrix{3,3,S}, batt::S, stor::S, mod::Union{S, Int64}) where S <: Real
 #     return State{S}(
