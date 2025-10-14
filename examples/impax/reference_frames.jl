@@ -229,6 +229,90 @@ function plot_globe!(ax::Makie.LScene, t_jd_s, iers_eops, texture_ecef)
 
 end
 
+
+
+function maneuver()
+    # NOTE: for a DCM, the first column *should* correspond to the projection of the first axis in the original frame.
+    # If the I frame is identity, the first column of the DCM C_BI can be plotted accurately without modification.
+
+    GLMakie.activate!(title="OpenSOAP")
+    
+    fig = Figure(size=(800,800))
+    display(fig)
+
+    C_BI = r_random()
+    C_AI = r_random()
+
+    v_I = [1;2;3]
+    v_I = v_I/norm(v_I)
+
+    al = AmbientLight(RGBf(243/255, 241/255, 230/255))
+    ax = LScene(
+        fig[1,1], 
+        show_axis=true, 
+        scenekw=(
+            # lights=[dl, al], 
+            lights = [al],
+            # backgroundcolor=:black, 
+            clear=true
+        )
+    )
+
+    orig = zeros(3,3)
+
+    ax_BI = cat(orig, C_BI, fill(NaN,3,3), dims=3)
+    ax_AI = cat(orig, C_AI, fill(NaN,3,3), dims=3)
+
+    v_B = C_BI*v_I
+    v_A = C_AI*v_I
+
+    colors = [:red,:red,:red, :green, :green, :green, :blue, :blue, :blue]
+
+    ninterp = 20
+    axs = rotinterp(C_BI, C_AI, ninterp)
+
+
+    # colors = vcat(colors, colors, colors)
+
+    arrow_width = 0.1
+    lines!(
+        ax,
+        [0,v_I[1]], [0,v_I[2]], [0,v_I[3]],
+        color = :grey,
+        linestyle = :dot
+    )
+    lines!(
+        ax,
+        ax_BI[:,1,:]'[:],
+        ax_BI[:,2,:]'[:],
+        ax_BI[:,3,:]'[:],
+        color = colors,
+        linestyle=:dash,
+        linewidth=2,
+    )
+    lines!(
+        ax,
+        [0,v_B[1]], [0,v_B[2]], [0,v_B[3]],
+        color = :black,
+        linestyle = :dash
+    )
+    lines!(
+        ax,
+        ax_AI[:,1,:]'[:],
+        ax_AI[:,2,:]'[:],
+        ax_AI[:,3,:]'[:],
+        color = colors,
+        linewidth=2,
+    )
+    lines!(
+        ax,
+        [0,v_A[1]], [0,v_A[2]], [0,v_A[3]],
+        color = :black
+    )
+
+    ax_BI
+end
+
 function main()
     eops = SatelliteToolboxTransformations.fetch_iers_eop()
     texture = load_earth_texture_to_ecef(joinpath("assets","map_pol2.png"))

@@ -13,6 +13,7 @@ docs/site/
 
 # project
 assets/*
+!assets/enterprise-d.obj
 !assets/map_diffuse.png
 !assets/example_screenshot.png
 cases/*

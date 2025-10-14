@@ -358,9 +358,9 @@ function state_to_dict(time::Vector{S}, states::Vector{State{S}}) where S<:Real
     end
     soln = Dict("time" => time, "state" => zeros(length(states[1]), length(time)))
     for (k, state) in enumerate(states)
-        soln["state"][:,k] = [
-            state.position; 
-            state.velocity; 
+        soln["state"][:, k] = [
+            state.position;
+            state.velocity;
             state.angular_velocity;
             state.attitude[:];
             state.battery;
@@ -391,7 +391,7 @@ function simulate_orbit!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
     @showprogress desc = "Propagating orbit...\t" for k in eachindex(times)
         if k == 1
             for (s, target) in enumerate(sim.mission.targets)
-                targets[s,k] = visibility(target, times[k], states[k].position)
+                targets[s, k] = visibility(target, times[k], states[k].position)
             end
             continue
         end
@@ -403,9 +403,9 @@ function simulate_orbit!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
         orbit_dynamics!(k4, states[k-1] + dt * k3, times[k-1] + dt, dt, sim)
 
         states[k] = states[k-1] + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-        
+
         for (s, target) in enumerate(sim.mission.targets)
-            targets[s,k] = visibility(target, times[k], states[k].position)
+            targets[s, k] = visibility(target, times[k], states[k].position)
         end
     end
 end
@@ -415,7 +415,7 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
     k = 2
     active_target = 0
     # states[k].mode will track the mode
-    
+
     # usage:
     #   states[k].mode will give you a body vector
     #   reference_direction[:, k] will give you an inertial direction to point it
@@ -423,22 +423,18 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
 
     transitions = hcat(zeros(length(sim.mission.targets)), diff(targets, dims=2))
 
-    t_sun = findfirst(x->isa(x, SunTarget), sim.mission.targets)
-    t_mag = findfirst(x->isa(x, MagneticTarget), sim.mission.targets)
-    t_gs = findall(x->isa(x, GroundTarget), sim.mission.targets)
+    t_sun = findfirst(x -> isa(x, SunTarget), sim.mission.targets)
+    t_mag = findfirst(x -> isa(x, MagneticTarget), sim.mission.targets)
+    t_gs = findall(x -> isa(x, GroundTarget), sim.mission.targets)
 
-    println("sun target", t_sun)
-    println("mag target", t_mag)
-    println("gs target", t_gs)
-
-    progbar = Progress(n_orbit, desc="Prioritizing targets...\t")
+    progbar = Progress(n_orbit, desc="Running target selection...\t")
     while k < length(times)
         update!(progbar, k)
-        diffmask = targets[:,k] .> targets[:,k-1]
+        diffmask = targets[:, k] .> targets[:, k-1]
 
         if any(targets[t_gs, k] .!= 0)     # any groundstation is visible
             for (p, target) in enumerate(sim.mission.targets)
-                if targets[p,k] == 1 && isa(target, GroundTarget)
+                if targets[p, k] == 1 && isa(target, GroundTarget)
                     active_target = p
                     break
                 end
@@ -447,8 +443,8 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
             # active_target = findfirst(x->isa(x, GroundTarget), sim.mission.targets[target_set])
             # println(active_target)
             # active_target = findfirst(x->x == 1, targets[:, k]) # default to the first groundstation
-            endtime_rel = findfirst(x->x == 0, targets[active_target, k:end])
-            
+            endtime_rel = findfirst(x -> x == 0, targets[active_target, k:end])
+
             if isnothing(endtime_rel)
                 # sim ends before target goes out of view.
                 # save data for this target
@@ -459,13 +455,13 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
             duration = endtime - k
 
             # if there is another target with a longer duration that starts during this duration, set it as active target and continue.
-            options = Vector{Pair{Int64, Int64}}(undef, 0) # record the (duration, index) for alternative targets
+            options = Vector{Pair{Int64,Int64}}(undef, 0) # record the (duration, index) for alternative targets
             for (p, target) in enumerate(sim.mission.targets)
                 if isa(target, GroundTarget)
                     if p == active_target
                         continue
                     end
-                    if any(transitions[p,k:endtime] .== 1)
+                    if any(transitions[p, k:endtime] .== 1)
                         # this other target p starts a window during active_target's window.
                         #   find out if that window has better duration.
                         other_endtime_rel = findfirst(x -> x == 0, targets[p, k:end])
@@ -480,15 +476,15 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
                 end
             end
             if length(options) > 0
-                best_duration, best_index = findmax(x->x.first, options)
+                best_duration, best_index = findmax(x -> x.first, options)
                 if best_duration <= 0
                     throw("not incrementing (best)!")
                 end
                 active_target = best_index # update the target
-                [target_choice[j] = active_target for j in k:best_duration + k - 1]
-                [states[j].mode = Int64(downlink::Modes) for j in k:best_duration + k - 1]
+                [target_choice[j] = active_target for j in k:best_duration+k-1]
+                [states[j].mode = Int64(downlink::Modes) for j in k:best_duration+k-1]
                 # reference_directions[:,k:best_duration + k - 1] = ...
-                [reference_directions[:,j] = position_eci(sim.mission.targets[active_target], times[j]) for j in k:best_duration + k - 1]
+                [reference_directions[:, j] = position_eci(sim.mission.targets[active_target], times[j]) - states[j].position for j in k:best_duration+k-1]
                 k += best_duration # skip to the end of the window for this target
                 continue
             else
@@ -496,10 +492,10 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
                     println(targets[active_target, k:k+3])
                     throw("not incrementing (base)!")
                 end
-                [target_choice[j] = active_target for j in k:duration + k - 1]
-                [states[j].mode = Int64(downlink::Modes) for j in k:duration + k - 1]
+                [target_choice[j] = active_target for j in k:duration+k-1]
+                [states[j].mode = Int64(downlink::Modes) for j in k:duration+k-1]
                 # reference_directions[:,k:best_duration + k - 1] = ...
-                [reference_directions[:,j] = position_eci(sim.mission.targets[active_target], times[j]) for j in k:duration + k - 1]
+                [reference_directions[:, j] = position_eci(sim.mission.targets[active_target], times[j]) - states[j].position for j in k:duration+k-1]
                 k += duration
                 continue
             end
@@ -509,37 +505,202 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
             active_target = t_mag
             target_choice[k] = active_target
             states[k].mode = Int64(science::Modes)
-            reference_directions[:,k] = position_eci(sim.mission.targets[active_target], Vector(states[k].position), times[k])
+            ref_dir = position_eci(sim.mission.targets[active_target], Vector(states[k].position), times[k])
+            # if we are in southern magnetic hemisphere i.e. field lines point away from earth, want to actually point antiparallel to the lines.
+            if ref_dir'*states[k].position > 0
+                ref_dir = -ref_dir
+            end
+            reference_directions[:, k] = ref_dir
 
         elseif targets[t_sun, k] != 0    # sun is visible
             # do sun pointing
             active_target = t_sun
             target_choice[k] = active_target
             states[k].mode = Int64(charging::Modes)
-            reference_directions[:,k] = position_eci(sim.mission.targets[active_target], times[k])
+            reference_directions[:, k] = position_eci(sim.mission.targets[active_target], times[k])
 
         else
             states[k].mode = Int64(idle::Modes)
-            # do idle mode
-            # active_target = nothing
+            if k > 1
+                # remain at the previous reference direction
+                reference_directions[:, k] = reference_directions[:, k - 1]
+            else
+                reference_directions[:, k] = [0.0,0.0,1.0]
+            end
         end
         k += 1
     end
-    
-    finish!(progbar)
 
-    
+    finish!(progbar)
 end
+
+function assign_attitude_reference!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}}, times::Vector{S}, states::Vector{State{S}}, targets::Matrix{S}, target_choice::Vector{Int64}, reference_directions::Matrix{S}, reference_attitude::Dict{Int64, Tuple{Vector{S}, Vector{State{S}}}}) where {S<:Real}
+    n_time = length(times)
+    coarse_dt = sim.dt
+
+    minute_k = Int(round(60 / coarse_dt))
+
+    mode_val = [state.mode for state in states]
+    mode_change_k = findall(x -> x != 0, diff(target_choice))
+    priority = Dict(
+        0 => downlink::Modes,
+        1 => science::Modes,
+        2 => charging::Modes,
+        3 => idle::Modes,
+        9 => safe::Modes,
+    )
+
+    @showprogress desc = "Assigning reference knot points...\t" for k in eachindex(times)
+        if k == length(times)
+            break
+        end
+        start_maneuver_k = 1
+        stop_maneuver_k = 1
+        # select mode changes
+        if target_choice[k+1] != target_choice[k]
+            if states[k+1].mode == Int(downlink::Modes)
+                # transitioning to a groundstation
+                if states[k].mode == Int(downlink::Modes)
+                    # split the difference in the maneuver
+                    halfminute_k = minute_k ÷ 2
+                    start_maneuver_k = max(1, k - halfminute_k)
+                    stop_maneuver_k = min(n_time, k + halfminute_k)
+                else
+                    # consume the current mode
+                    start_maneuver_k = max(1, k - minute_k + 1)
+                    stop_maneuver_k = k
+                end
+            elseif states[k+1].mode == Int(science::Modes)
+                if states[k].mode == Int(downlink::Modes)
+                    # priority downlink
+                    start_maneuver_k = k
+                    stop_maneuver_k = min(n_time, k + minute_k)
+                else
+                    # priority science
+                    start_maneuver_k = max(1, k - minute_k)
+                    stop_maneuver_k = k
+                end
+            elseif states[k+1].mode == Int(charging::Modes)
+                if states[k].mode == Int(downlink::Modes) || states[k].mode == Int(science::Modes)
+                    # priority downlink or science
+                    start_maneuver_k = k
+                    stop_maneuver_k = min(n_time, k + minute_k)
+                else
+                    # priority power
+                    start_maneuver_k = max(1, k - minute_k)
+                    stop_maneuver_k = k
+                end
+            else
+                continue
+            end
+            [states[j].mode = Int(pointing::Modes) for j in start_maneuver_k:stop_maneuver_k]
+        end
+    end
+
+    # now, cover the entire state history again, selecting regions which are 
+    #   1. pointing mode (interpolate start to end)
+    #   2. science mode (track w/ interpolation)
+    #   3. downlink mode (track w/ interpolation)
+    #
+    # and generate attitude reference for all of them. Bridge these dynamic pointing 
+    # modes by assuming constant inertial pointing for
+    #   a. charging mode
+    #   b. idle mode
+
+    # fine_dt = 0.22 / sqrt(norm(Iinv * m_max))
+    fine_dt = 0.1
+    dt_mul = Int(round(coarse_dt/fine_dt))
+
+    @warn "using hardcoded body vectors for slew! Replace later."
+    dir_for_mode_B = Dict(
+        downlink::Modes=>[0.0;0.0;1.0],
+        science::Modes=>[0.0;0.0;1.0],
+        charging::Modes=>[0.0;0.0;-1.0],
+    )
+
+    snap_initial = false # for future use, snap initial attitude value
+    C_BI0 = states[1].attitude
+    dynamic_attitude_modes = [science::Modes, downlink::Modes]
+    
+    # store fine time sequence (finetime, Vector{State} pair) in a dictionary keyed by the maneuver start time.
+    maneuver_reference = Dict{Int64, Tuple{Vector{S}, Vector{State{S}}}}()
+    progbar = Progress(n_time, desc="Interpolating reference attitude...\t")
+    k = 2
+    while k <= n_time
+        update!(progbar, k)
+        # find start point of maneuver (1, 2, 3 in above list)
+        #   find stop point of that maneuver (when target changes)
+        # rotinterp the maneuver endpoints (in attitude) with fine timestep to get attitude reference
+        #   then exponential map the attitude diff to get angular rate reference
+        # the other state elements can be directly interpolated (vectors).
+        # push the (finetime, State reference) pair into the dict with key k.
+        
+        # entering a maneuver
+        if Modes(states[k].mode) == pointing::Modes && Modes(states[k - 1].mode) != pointing::Modes
+            # find the endpoint of the maneuver. will act based on what is happening at the endpoint.
+            slew_stop_k = findnext(x->x.mode != Int(pointing::Modes), states, k)
+
+            if Modes(states[slew_stop_k].mode) == idle::Modes
+                @warn "found a slew into idle mode?"
+                k = slew_stop_k
+                continue
+            end
+
+            if Modes(states[slew_stop_k].mode) in dynamic_attitude_modes    
+                # println(k, ": ", Modes(states[k].mode), " -> ", Modes(states[stop_k].mode))
+                
+                # slew to the start attitude of the downlink maneuver
+                C_AB = r_min_arc(C_BI0*reference_directions[:, k - 1], dir_for_mode_B[Modes(states[slew_stop_k].mode)])
+                C_AI = C_AB*C_BI0
+
+                n_fine = dt_mul*(slew_stop_k - 1 - k)
+                time_fine = times[k]:fine_dt:times[slew_stop_k - 1]
+                s0 = states[k]
+                s0.attitude = C_BI0
+                sf = states[slew_stop_k - 1]
+                sf.attitude = C_AI
+                states_fine = interp(s0, sf, n_fine)
+                reference_attitude[k] = (time_fine, states_fine)
+
+                # todo: now, also slew through the maneuver.
+                this_mode = states[slew_stop_k].mode
+                next_mode_k = findnext(x->x.mode != this_mode, states, slew_stop_k)
+                for s in dt_mul*(next_mode_k - slew_stop_k)
+                    # todo: step through interpolate.
+                end
+                k = slew_stop_k
+                C_BI0 = C_AI
+
+
+                # note on r_min_arc usage:
+                #   pass in two vectors in the same frame (the initial frame). Then multiply the result by the initial frame, and get the final frame.  
+
+            # elseif Modes(states[k].mode) in dynamic_attitude_modes
+                # min arc slew between reference directions at each timestep during this maneuver (before next mode change) (making knot points)
+                #   then rotinterp the knot points.
+            # elseif Modes(states[k].mode) == charging::Modes
+                # attitude is min arc slew between last mode and mean sun direction of this mode
+            else
+                # hold last 
+                
+            end
+        end
+        k += 1
+    end
+end
+
 
 function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}})
 
-    times = Vector{Float64}(sim.tspan[1]:1:sim.tspan[2])
+    times = Vector{Float64}(sim.tspan[1]:sim.dt:sim.tspan[2])
     n_orbit = length(times)
-    
+
     # allocate:
     target_visibilities = Matrix{Float64}(undef, length(sim.mission.targets), n_orbit)
     target_choice = zeros(Int64, n_orbit) .- 4
     reference_directions = Matrix{Float64}(undef, 3, n_orbit) # pointing direction at each time
+    reference_attitude = Array{Float64,3}(undef, 3, 3, n_orbit) # attitude reference at each time
+    fine_reference_attitude = Dict{Int64, Tuple{Vector{Float64}, Vector{State{Float64}}}}()
     states = Vector{State{Float64}}(undef, n_orbit)
     # initial condition:
     states[1] = State{Float64}(sim)
@@ -549,9 +710,11 @@ function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,Stri
     simulate_orbit!(sim, sim_config, times, states, target_visibilities)
     # assign target based on conop
     simulate_conop!(sim, sim_config, times, states, target_visibilities, target_choice, reference_directions)
+    # rectify attitude reference with pointings
+    assign_attitude_reference!(sim, sim_config, times, states, target_visibilities, target_choice, reference_directions, fine_reference_attitude)
 
     # fudging this for later usage:
-    [state.attitude = diagm([1.0;1.0;1.0]) for state in states]
+    [state.attitude = diagm([1.0; 1.0; 1.0]) for state in states]
 
     # run conop logic for targeting
     #   note: this is a priori---pointing logic can be interrupted by tumbling or low power triggers
@@ -571,5 +734,5 @@ function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,Stri
     #
     # return state trajectory, time, target visibility mask
     #
-    return times, states, target_visibilities, target_choice
+    return times, states, target_visibilities, target_choice, reference_directions, fine_reference_attitude
 end
