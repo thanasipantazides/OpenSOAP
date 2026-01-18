@@ -13,5 +13,15 @@ using OpenSOAP, Test, LinearAlgebra
     end
     @test all(dets .≈ 1.0)
     @test all(abs.(traces) .< 1e-9)
-    
+end
+@testset "chained rotations" begin
+    C_AI = diagm([1.0,1.0,1.0])
+    C_AI = r_euler3(pi/2)
+    p_A = [1.0;0.0;0.0]
+    r_A = [0.0;1.0;0.0]
+
+    C_BA = r_min_arc(C_AI*p_A, C_AI*r_A)
+
+    @test all((C_BA*C_AI - r_euler3(pi)).^2 .< 1e-3)
+    @test all(C_BA*C_AI*p_A - r_A .< 1e-3)
 end

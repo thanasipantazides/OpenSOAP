@@ -19,3 +19,6 @@ assets/*
 cases/*
 
 .libHSL/
+
+.zed/
+.vscode/

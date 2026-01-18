@@ -1523,9 +1523,9 @@ function plot_moc!(
         tellheight = false
     )
 
-    layout_sc_options = GridLayout(fig[1, 2], tellheight = true)
-    layout_env_options = GridLayout(fig[2, 2], tellheight = true)
-    layout_cam_options = GridLayout(fig[3, 2], tellheight = true)
+    layout_sc_options = GridLayout(fig[1, 2], tellheight = false)
+    layout_env_options = GridLayout(fig[2, 2], tellheight = false)
+    layout_cam_options = GridLayout(fig[3, 2], tellheight = false)
 
     Label(layout_sc_options[1, 1],
         "Spacecraft",
@@ -1812,6 +1812,35 @@ function plot_moc!(
     mag_k = findfirst(x->isa(x, MagneticTarget), sim.mission.targets)
     mag_target = sim.mission.targets[mag_k]
 
+    mag_vis_range = -r_E*3..r_E*3
+
+    mag_now_eci(p, k) = Point3f(position_eci(mag_target, p, times[k], max_degree=3))
+    mag_func = Observable(Base.Fix2(mag_now_eci, 1))
+    on(timestep) do k
+        mag_func = Observable(Base.Fix2(mag_now_eci, k))
+    end
+
+    width_scale = 0.005
+    # streamplot!(
+    #     ax_globe,
+    #     mag_func,
+    #     mag_vis_range,
+    #     mag_vis_range,
+    #     mag_vis_range,
+    #     color=(p)-> RGBAf(norm(p)/3e4, 0.0, 1 - norm(p)/3e4, 1.0),
+    #     # colorrange=[-3*r_E, 3*r_E],
+    #     # colormap=:matter,
+    #     gridsize=(16,16,16),
+    #     maxsteps=5000,
+    #     density=0.6,
+    #     stepsize=200e3,
+    #     arrow_size=(100000,100000,100000),
+    #     linewidth=1,
+    #     # linewidth=r_E*0.0001,
+    #     # arrow_size=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
+    # )
+    
+
     field_step = 50
     ref_step = 10
 
@@ -1843,6 +1872,7 @@ function plot_moc!(
     man_scale = r_E*0.1
 
     on(time_range) do time_range
+        # println("Mode: ", Modes(Int(states[time_range[end]].mode)))
         first_index = time_range[end] - tail_length + 1
         sparse_field_range = first_index:field_step:time_range[end]
         sparse_field_range = sparse_field_range[1:n_field]
@@ -1857,7 +1887,7 @@ function plot_moc!(
                 field_alpha[][b_idx] = 0.0
             else
                 pos_ecef = r_ecef_to_eci(ITRF(), J2000(), times[k]/24/3600, eops)'*states[k].position
-                igrf_eci = r_ecef_to_eci(ITRF(), J2000(), times[k]/24/3600, eops)*position_ecef(mag_target, Vector(pos_ecef), times[k])
+                igrf_eci = r_ecef_to_eci(ITRF(), J2000(), times[k]/24/3600, eops)*position_ecef(mag_target, Vector(pos_ecef), times[k], max_degree=3)
 
                 field_tail[][b_idx] = Point3f(states[k].position)
                 field_head[][b_idx] = Point3f(igrf_eci ./ norm(igrf_eci))
@@ -1880,7 +1910,7 @@ function plot_moc!(
             timeindex = time_range[end]
             igrf_pos_ecef = geocentric_to_ecef(Vector(p))
             C_IF_loc = r_ecef_to_eci(ITRF(), J2000(), times[timeindex]/24/3600, eops)
-            igrf_global_eci = C_IF_loc*position_ecef(mag_target, igrf_pos_ecef, times[timeindex])
+            igrf_global_eci = C_IF_loc*position_ecef(mag_target, igrf_pos_ecef, times[timeindex], max_degree=3)
             global_field_tail[][i] = Point3f(C_IF_loc*igrf_pos_ecef)
             global_field_head[][i] = Point3f(igrf_global_eci ./ norm(igrf_global_eci))
             global_field_index[][i] = norm(igrf_global_eci)
@@ -2032,7 +2062,7 @@ function plot_moc!(
     C_BI = lift(timestep) do timestep
         return states[timestep].attitude
     end
-    body_axes_heads = lift(C_BI) do C_BI # todo: is this wrong? should be heads = [Vec3f(soln["state"][1:3] + C_BI'*body_tip[:,i]) for i in 1:3]?
+    body_axes_heads = lift(C_BI) do C_BI
         return Vec3f[C_BI*body_tip[:,i] for i in 1:3]
     end
     body_axes_tails = lift(pos) do pos

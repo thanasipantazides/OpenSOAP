@@ -1,6 +1,7 @@
 import Base.@kwdef
 import SatelliteToolboxBase, SatelliteToolboxTransformations, SatelliteToolboxCelestialBodies
 using LinearAlgebra, Statistics, Printf
+import Dates
 
 @kwdef struct EarthProperties
     mu::Real
@@ -265,4 +266,45 @@ function mission_stats(soln::Dict, target_histories::Dict, params)::Dict{String,
     )
 
     return return_val
+end
+
+function gpstime_to_utc(gps_week, gps_second; warn=true)
+    year_range = 1972:2025
+    if year(now()) >= year_range[end] && warn
+        @warn "leap seconds may be out of date!"
+    end
+
+    gps_epoch = Dates.DateTime(1980, 1, 6, 0, 0, 0)
+    leap_epoch = Dates.DateTime(1972, 1, 1, 0, 0, 0)
+    
+    # accumulated leap seconds after June 30 of each year since 1972
+    jun_leap_seconds_per_year_since_epoch = cumsum([1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    # accumulated leap seconds after December 31 of each year since 1972
+    dec_leap_seconds_per_year_since_epoch = cumsum([1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+    second_int = Int(floor(gps_second))
+    microsecond_int = Int(round(1e6*(gps_second - second_int)))
+    # Compute an initial UTC datetime which will be corrected by leap seconds and TAI offset later.
+    pre_date = gps_epoch + Dates.Week(gps_week) + Dates.Second(second_int) + Dates.Microsecond(microsecond_int)
+    
+    # find the index into the leap second array corresponding to this year:
+    kyear = findlast(x->Dates.year(pre_date) > x, year_range) + 1
+    month = Dates.month(pre_date)
+
+    # add the Dec 31 leap seconds.
+    leap_seconds = dec_leap_seconds_per_year_since_epoch[kyear]
+    if month > Dates.Jun
+        # if it is after June 30, add the June 30 leap seconds for this year too.
+        leap_seconds += jun_leap_seconds_per_year_since_epoch[kyear]
+    else
+        # if it is before June 30, add the June 30 leap seconds for the previous year.
+        leap_seconds += jun_leap_seconds_per_year_since_epoch[kyear - 1]
+    end
+    
+    # TAI clock is always 10 seconds behind UTC, so need to add this.
+    tai_to_utc = Dates.Second(10)
+
+    corrected_date_utc = pre_date - Dates.Second(leap_seconds) + tai_to_utc
+    
+    return corrected_date_utc
 end

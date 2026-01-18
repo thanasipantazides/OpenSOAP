@@ -176,3 +176,7 @@ function load_bfield(file::String, type::Type)
         end
     end
 end
+
+function save_state(times::Vector{<:Real}, states::Vector{State{T}}) where T<:Real
+    
+end

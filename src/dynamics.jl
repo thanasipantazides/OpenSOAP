@@ -534,22 +534,243 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
     finish!(progbar)
 end
 
-function assign_attitude_reference!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}}, times::Vector{S}, states::Vector{State{S}}, targets::Matrix{S}, target_choice::Vector{Int64}, reference_directions::Matrix{S}, reference_attitude::Dict{Int64, Tuple{Vector{S}, Vector{State{S}}}}) where {S<:Real}
-    n_time = length(times)
-    coarse_dt = sim.dt
+# function assign_attitude_reference!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}}, times::Vector{S}, states::Vector{State{S}}, targets::Matrix{S}, target_choice::Vector{Int64}, reference_directions::Matrix{S}, reference_attitude::Dict{Int64, Tuple{Vector{S}, Vector{State{S}}}}) where {S<:Real}
+#     n_time = length(times)
+#     coarse_dt = sim.dt
 
-    minute_k = Int(round(60 / coarse_dt))
+#     minute_k = Int(round(60 / coarse_dt))
 
-    mode_val = [state.mode for state in states]
-    mode_change_k = findall(x -> x != 0, diff(target_choice))
-    priority = Dict(
-        0 => downlink::Modes,
-        1 => science::Modes,
-        2 => charging::Modes,
-        3 => idle::Modes,
-        9 => safe::Modes,
+#     mode_val = [state.mode for state in states]
+#     mode_change_k = findall(x -> x != 0, diff(target_choice))
+#     priority = Dict(
+#         0 => downlink::Modes,
+#         1 => science::Modes,
+#         2 => charging::Modes,
+#         3 => idle::Modes,
+#         9 => safe::Modes,
+#     )
+
+#     @showprogress desc = "Assigning reference knot points...\t" for k in eachindex(times)
+#         if k == length(times)
+#             break
+#         end
+#         start_maneuver_k = 1
+#         stop_maneuver_k = 1
+#         # select mode changes
+#         if target_choice[k+1] != target_choice[k]
+#             if states[k+1].mode == Int(downlink::Modes)
+#                 # transitioning to a groundstation
+#                 if states[k].mode == Int(downlink::Modes)
+#                     # split the difference in the maneuver
+#                     halfminute_k = minute_k ÷ 2
+#                     start_maneuver_k = max(1, k - halfminute_k)
+#                     stop_maneuver_k = min(n_time, k + halfminute_k)
+#                 else
+#                     # consume the current mode
+#                     start_maneuver_k = max(1, k - minute_k + 1)
+#                     stop_maneuver_k = k
+#                 end
+#             elseif states[k+1].mode == Int(science::Modes)
+#                 if states[k].mode == Int(downlink::Modes)
+#                     # priority downlink
+#                     start_maneuver_k = k
+#                     stop_maneuver_k = min(n_time, k + minute_k)
+#                 else
+#                     # priority science
+#                     start_maneuver_k = max(1, k - minute_k)
+#                     stop_maneuver_k = k
+#                 end
+#             elseif states[k+1].mode == Int(charging::Modes)
+#                 if states[k].mode == Int(downlink::Modes) || states[k].mode == Int(science::Modes)
+#                     # priority downlink or science
+#                     start_maneuver_k = k
+#                     stop_maneuver_k = min(n_time, k + minute_k)
+#                 else
+#                     # priority power
+#                     start_maneuver_k = max(1, k - minute_k)
+#                     stop_maneuver_k = k
+#                 end
+#             else
+#                 continue
+#             end
+#             [states[j].mode = Int(pointing::Modes) for j in start_maneuver_k:stop_maneuver_k]
+#         end
+#     end
+
+#     # now, cover the entire state history again, selecting regions which are 
+#     #   1. pointing mode (interpolate start to end)
+#     #   2. science mode (track w/ interpolation)
+#     #   3. downlink mode (track w/ interpolation)
+#     #
+#     # and generate attitude reference for all of them. Bridge these dynamic pointing 
+#     # modes by assuming constant inertial pointing for
+#     #   a. charging mode
+#     #   b. idle mode
+
+#     # fine_dt = 0.22 / sqrt(norm(Iinv * m_max))
+#     fine_dt = 0.1
+#     dt_mul = Int(round(coarse_dt/fine_dt))
+
+#     @warn "using hardcoded body vectors for slew! Replace later."
+#     dir_for_mode_B = Dict(
+#         downlink::Modes=>[0.0;0.0;1.0],
+#         science::Modes=>[0.0;0.0;1.0],
+#         charging::Modes=>[0.0;0.0;-1.0],
+#     )
+
+#     snap_initial = false # for future use, snap initial attitude value
+#     C_BI0 = states[1].attitude
+#     dynamic_attitude_modes = [science::Modes, downlink::Modes, pointing::Modes]
+    
+#     # store fine time sequence (finetime, Vector{State} pair) in a dictionary keyed by the maneuver start time.
+#     maneuver_reference = Dict{Int64, Tuple{Vector{S}, Vector{State{S}}}}()
+#     progbar = Progress(n_time, desc="Interpolating reference attitude...\t")
+#     k = 2
+#     # C_BI0 = states[k].attitude
+#     while k <= n_time
+#         update!(progbar, k)
+        
+#         # find start point of maneuver (1, 2, 3 in above list)
+#         #   find stop point of that maneuver (when target changes)
+#         # rotinterp the maneuver endpoints (in attitude) with fine timestep to get attitude reference
+#         #   then log map the attitude diff to get angular rate reference
+#         # the other state elements can be directly interpolated (vectors).
+#         # push the (finetime, State reference) pair into the dict with key k.
+         
+#         if Modes(states[k].mode) == pointing::Modes
+#             this_mode_start_k = k
+#             next_mode_start_k = findnext(x->x.mode != states[k].mode, states, k)
+#             if isnothing(next_mode_start_k) break end
+#             this_mode_final_k = next_mode_start_k - 1
+            
+#             # C_BI0 = I(3)
+#             # the attitude once this maneuver is done:
+#             println(Modes(states[next_mode_start_k].mode))
+#             R_man = r_min_arc(reference_directions[:, next_mode_start_k], C_BI0'*dir_for_mode_B[Modes(states[next_mode_start_k].mode)])
+#             println(tr(R_man'*R_man) + sum(R_man'*R_man - R_man*R_man'))
+#             println(det(R_man))
+#             C_BInext = R_man*C_BI0
+            
+#             # n_fine = dt_mul*(this_mode_final_k - k)
+#             n_fine = 1*(this_mode_final_k - k)
+#             time_fine = times[k]:fine_dt:times[this_mode_final_k]
+            
+#             this_state = states[k]
+#             this_state.attitude = C_BI0
+#             this_mode_final_state = states[this_mode_final_k]
+#             this_mode_final_state.attitude = C_BInext
+#             states_fine = interp(this_state, this_mode_final_state, n_fine)
+            
+#             reference_attitude[k] = (time_fine, states_fine)
+#             k = next_mode_start_k
+#             C_BI0 = C_BInext
+            
+#         elseif Modes(states[k].mode) in dynamic_attitude_modes
+#             next_mode_start_k = findnext(x->x.mode != states[k].mode, states, k)
+#             this_mode_final_k = next_mode_start_k - 1
+            
+            
+#             # for j in k:this_mode_final_k-1
+#             #     # can use k here rather than j, should be same for all j:
+#             #     R_man = r_min_arc(C_BI0*reference_directions[:, j], dir_for_mode_B[Modes(states[j].mode)])
+#             #     C_Bnext = C_BI0*R_man'
+                
+#             #     n_fine = dt_mul
+#             #     time_fine = times[j]:fine_dt:times[j+1]
+                
+#             #     this_state = states[j]
+#             #     this_state.attitude = C_BI0
+#             #     this_mode_final_state = states[j+1]
+#             #     this_mode_final_state.attitude = C_Bnext
+#             #     states_fine = interp(this_state, this_mode_final_state, n_fine)
+                
+#             #     reference_attitude[j] = (time_fine, states_fine)
+                
+#             #     C_BI0 = C_Bnext
+#             # end
+#             # k = next_mode_start_k
+#         end
+        
+#         # # entering a maneuver
+#         # if Modes(states[k].mode) == pointing::Modes && Modes(states[k - 1].mode) != pointing::Modes
+#         #     # find the endpoint of the maneuver. will act based on what is happening at the endpoint.
+#         #     slew_stop_k = findnext(x->x.mode != Int(pointing::Modes), states, k)
+
+#         #     if Modes(states[slew_stop_k].mode) == idle::Modes
+#         #         @warn "found a slew into idle mode?"
+#         #         k = slew_stop_k
+#         #         continue
+#         #     end
+
+#         #     if Modes(states[slew_stop_k].mode) in dynamic_attitude_modes    
+#         #         # println(k, ": ", Modes(states[k].mode), " -> ", Modes(states[stop_k].mode))
+                
+#         #         # slew to the start attitude of the next mode
+#         #         C_AB = r_min_arc(reference_directions[:, k], dir_for_mode_B[Modes(states[slew_stop_k].mode)])
+#         #         # C_AI = C_BI0*C_AB'
+#         #         C_AI = C_AB
+
+#         #         n_fine = dt_mul*(slew_stop_k - 1 - k)
+#         #         time_fine = times[k]:fine_dt:times[slew_stop_k - 1]
+#         #         s0 = states[k]
+#         #         s0.attitude = C_BI0
+#         #         sf = states[slew_stop_k - 1]
+#         #         sf.attitude = C_AI
+#         #         states_fine = interp(s0, sf, n_fine)
+#         #         # states_fine = interp(sf, s0, n_fine)
+#         #         reference_attitude[k] = (time_fine, states_fine)
+
+#         #         # todo: now, also slew through the maneuver.
+#         #         this_mode = states[slew_stop_k].mode
+#         #         next_mode_k = findnext(x->x.mode != this_mode, states, slew_stop_k)
+#         #         for s in dt_mul*(next_mode_k - slew_stop_k)
+#         #             # todo: step through interpolate.
+#         #         end
+#         #         k = slew_stop_k
+#         #         C_BI0 = C_AI
+
+
+#         #         # note on r_min_arc usage:
+#         #         #   pass in two vectors in the same frame (the initial frame). Then multiply the result by the initial frame, and get the final frame.  
+
+#         #     # elseif Modes(states[k].mode) in dynamic_attitude_modes
+#         #         # min arc slew between reference directions at each timestep during this maneuver (before next mode change) (making knot points)
+#         #         #   then rotinterp the knot points.
+#         #     # elseif Modes(states[k].mode) == charging::Modes
+#         #         # attitude is min arc slew between last mode and mean sun direction of this mode
+#         #     else
+#         #         # hold last 
+                
+#         #     end
+#         # end
+#         k += 1
+#     end
+# end
+
+function assign_attitude_reference!(sim::LEOSimulation, 
+        sim_config::Union{Nothing,Dict{String,String}}, 
+        times::Vector{S}, 
+        states::Vector{State{S}},
+        targets::Matrix{S}, 
+        target_choice::Vector{Int64}, 
+        reference_directions::Matrix{S}, 
+        reference_attitude::Dict{Int64, Tuple{Vector{S}, Vector{State{S}}}}
+    ) where {S<:Real}
+
+    # for now, ignore fine time. reference attitude will be interpolated at each state value.
+    
+    minute_k = Int(round(60 / sim.dt))
+    nt = length(times)
+    
+    track_modes = [downlink::Modes, science::Modes, charging::Modes]
+    
+    @warn "using hardcoded body vectors for slew! Replace later."
+    dir_for_mode_B = Dict(
+        downlink::Modes=>[0.0;0.0;1.0],
+        science::Modes=>[0.0;0.0;1.0],
+        charging::Modes=>[0.0;0.0;-1.0],
     )
-
+    
     @showprogress desc = "Assigning reference knot points...\t" for k in eachindex(times)
         if k == length(times)
             break
@@ -564,7 +785,7 @@ function assign_attitude_reference!(sim::LEOSimulation, sim_config::Union{Nothin
                     # split the difference in the maneuver
                     halfminute_k = minute_k ÷ 2
                     start_maneuver_k = max(1, k - halfminute_k)
-                    stop_maneuver_k = min(n_time, k + halfminute_k)
+                    stop_maneuver_k = min(nt, k + halfminute_k)
                 else
                     # consume the current mode
                     start_maneuver_k = max(1, k - minute_k + 1)
@@ -574,7 +795,7 @@ function assign_attitude_reference!(sim::LEOSimulation, sim_config::Union{Nothin
                 if states[k].mode == Int(downlink::Modes)
                     # priority downlink
                     start_maneuver_k = k
-                    stop_maneuver_k = min(n_time, k + minute_k)
+                    stop_maneuver_k = min(nt, k + minute_k)
                 else
                     # priority science
                     start_maneuver_k = max(1, k - minute_k)
@@ -584,7 +805,7 @@ function assign_attitude_reference!(sim::LEOSimulation, sim_config::Union{Nothin
                 if states[k].mode == Int(downlink::Modes) || states[k].mode == Int(science::Modes)
                     # priority downlink or science
                     start_maneuver_k = k
-                    stop_maneuver_k = min(n_time, k + minute_k)
+                    stop_maneuver_k = min(nt, k + minute_k)
                 else
                     # priority power
                     start_maneuver_k = max(1, k - minute_k)
@@ -596,99 +817,76 @@ function assign_attitude_reference!(sim::LEOSimulation, sim_config::Union{Nothin
             [states[j].mode = Int(pointing::Modes) for j in start_maneuver_k:stop_maneuver_k]
         end
     end
-
-    # now, cover the entire state history again, selecting regions which are 
-    #   1. pointing mode (interpolate start to end)
-    #   2. science mode (track w/ interpolation)
-    #   3. downlink mode (track w/ interpolation)
-    #
-    # and generate attitude reference for all of them. Bridge these dynamic pointing 
-    # modes by assuming constant inertial pointing for
-    #   a. charging mode
-    #   b. idle mode
-
-    # fine_dt = 0.22 / sqrt(norm(Iinv * m_max))
-    fine_dt = 0.1
-    dt_mul = Int(round(coarse_dt/fine_dt))
-
-    @warn "using hardcoded body vectors for slew! Replace later."
-    dir_for_mode_B = Dict(
-        downlink::Modes=>[0.0;0.0;1.0],
-        science::Modes=>[0.0;0.0;1.0],
-        charging::Modes=>[0.0;0.0;-1.0],
-    )
-
-    snap_initial = false # for future use, snap initial attitude value
-    C_BI0 = states[1].attitude
-    dynamic_attitude_modes = [science::Modes, downlink::Modes]
     
-    # store fine time sequence (finetime, Vector{State} pair) in a dictionary keyed by the maneuver start time.
-    maneuver_reference = Dict{Int64, Tuple{Vector{S}, Vector{State{S}}}}()
-    progbar = Progress(n_time, desc="Interpolating reference attitude...\t")
-    k = 2
-    while k <= n_time
-        update!(progbar, k)
-        # find start point of maneuver (1, 2, 3 in above list)
-        #   find stop point of that maneuver (when target changes)
-        # rotinterp the maneuver endpoints (in attitude) with fine timestep to get attitude reference
-        #   then exponential map the attitude diff to get angular rate reference
-        # the other state elements can be directly interpolated (vectors).
-        # push the (finetime, State reference) pair into the dict with key k.
+    flat_modes = [states[k].mode for k in eachindex(times)]
+    
+    k = 1
+    first = true
+    while k < nt
+        if first
+            # todo
+            first = false
+            k += 1
+            continue
+        end
         
-        # entering a maneuver
-        if Modes(states[k].mode) == pointing::Modes && Modes(states[k - 1].mode) != pointing::Modes
-            # find the endpoint of the maneuver. will act based on what is happening at the endpoint.
-            slew_stop_k = findnext(x->x.mode != Int(pointing::Modes), states, k)
-
-            if Modes(states[slew_stop_k].mode) == idle::Modes
-                @warn "found a slew into idle mode?"
-                k = slew_stop_k
+        # for every pointing, just interpolate between first and last attitude. 
+        # for downlink and science, min arc slew between timesteps. Should be able to do that everywhere, actually.
+        if states[k].mode == Int(pointing::Modes)
+            C_BInext = I(3)
+            k_next = findnext(flat_modes .!= flat_modes[k], k)
+            if isnothing(k_next) # sim ends during this maneuver
+                @warn "odd, finishing sim while pointing."
+                C_BInext = states[k - 1].attitude
+                k += 1
                 continue
             end
-
-            if Modes(states[slew_stop_k].mode) in dynamic_attitude_modes    
-                # println(k, ": ", Modes(states[k].mode), " -> ", Modes(states[stop_k].mode))
-                
-                # slew to the start attitude of the downlink maneuver
-                C_AB = r_min_arc(C_BI0*reference_directions[:, k - 1], dir_for_mode_B[Modes(states[slew_stop_k].mode)])
-                C_AI = C_AB*C_BI0
-
-                n_fine = dt_mul*(slew_stop_k - 1 - k)
-                time_fine = times[k]:fine_dt:times[slew_stop_k - 1]
-                s0 = states[k]
-                s0.attitude = C_BI0
-                sf = states[slew_stop_k - 1]
-                sf.attitude = C_AI
-                states_fine = interp(s0, sf, n_fine)
-                reference_attitude[k] = (time_fine, states_fine)
-
-                # todo: now, also slew through the maneuver.
-                this_mode = states[slew_stop_k].mode
-                next_mode_k = findnext(x->x.mode != this_mode, states, slew_stop_k)
-                for s in dt_mul*(next_mode_k - slew_stop_k)
-                    # todo: step through interpolate.
-                end
-                k = slew_stop_k
-                C_BI0 = C_AI
-
-
-                # note on r_min_arc usage:
-                #   pass in two vectors in the same frame (the initial frame). Then multiply the result by the initial frame, and get the final frame.  
-
-            # elseif Modes(states[k].mode) in dynamic_attitude_modes
-                # min arc slew between reference directions at each timestep during this maneuver (before next mode change) (making knot points)
-                #   then rotinterp the knot points.
-            # elseif Modes(states[k].mode) == charging::Modes
-                # attitude is min arc slew between last mode and mean sun direction of this mode
-            else
-                # hold last 
-                
+            ref_norm = reference_directions[:,k_next] / norm(reference_directions[:,k_next])
+            # C_BInext = states[k-1].attitude*r_min_arc(states[k-1].attitude*dir_for_mode_B[Modes(states[k_next].mode)], ref_norm)
+            # C_BInext = r_min_arc(states[k-1].attitude*dir_for_mode_B[Modes(states[k_next].mode)], ref_norm)*states[k-1].attitude
+            C_BInext = states[k-1].attitude*r_min_arc(dir_for_mode_B[Modes(states[k_next].mode)], states[k-1].attitude'*ref_norm)
+            
+            seq = rotinterp(states[k-1].attitude, C_BInext, k_next - k)
+            # todo: this is an apparent bug in rotinterp: result is relative to left arg, 
+            # i.e. non-identity initial attitudes will be interpolated relative to the first attitude.
+            for j in k:k_next - 1
+                states[j].attitude = seq[:,:,j - k + 1]
+                # states[j].attitude = states[k-1].attitude*seq[:,:,j - k + 1]
             end
+            
+            k = k_next
+        elseif states[k].mode in Int.(track_modes)
+            ref_norm = reference_directions[:,k] / norm(reference_directions[:,k])
+            # states[k].attitude = r_min_arc(states[k-1].attitude*dir_for_mode_B[Modes(states[k].mode)], ref_norm)
+            # states[k].attitude = states[k-1].attitude*r_min_arc(states[k-1].attitude'*ref_norm, dir_for_mode_B[Modes(states[k].mode)])'
+            states[k].attitude = states[k-1].attitude*r_min_arc(dir_for_mode_B[Modes(states[k].mode)], states[k-1].attitude'*ref_norm)
+            k += 1
+        else
+            states[k].attitude = states[k-1].attitude
+            k += 1
         end
-        k += 1
     end
 end
 
+function simulate_power_data!(sim::LEOSimulation, 
+            sim_config::Union{Nothing,Dict{String,String}}, 
+            times::Vector{S}, 
+            states::Vector{State{S}},
+            targets::Matrix{S}, 
+            target_choice::Vector{Int64}
+    ) where S<:Real
+
+    for k in eachindex(times)
+        if k == 1 continue end
+        
+        # check modal power consumption, data production.
+        # check visibility (eclipse + viewing) of sun for power production
+        # check visibility (eclipse + viewing) of groundstations for data consumption
+        #   add arg to record data sent to each groundstation
+        
+        
+    end
+end
 
 function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}})
 
@@ -713,8 +911,9 @@ function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,Stri
     # rectify attitude reference with pointings
     assign_attitude_reference!(sim, sim_config, times, states, target_visibilities, target_choice, reference_directions, fine_reference_attitude)
 
+    simulate_power_data!(sim, sim_config, times, states, target_visibilities, target_choice)
     # fudging this for later usage:
-    [state.attitude = diagm([1.0; 1.0; 1.0]) for state in states]
+    # [state.attitude = diagm([1.0; 1.0; 1.0]) for state in states]
 
     # run conop logic for targeting
     #   note: this is a priori---pointing logic can be interrupted by tumbling or low power triggers

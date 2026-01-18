@@ -191,6 +191,12 @@ Makie.Quaternion(X::SMatrix{3,3}) = begin
     return Makie.Quaternion(qi, qj, qk, qr)
 end
 
+function r_from_quat(q::Vector{Float64}) 
+    qq = q[1:3]
+    qr = q[4]
+    return (qr^2 - qq'*qq)*I + 2*qq*qq' + 2*qr*cross(qq)
+end
+
 @doc raw"""
     uncross(X)
 
@@ -278,21 +284,53 @@ function ang321(C::SMatrix{3,3})::SVector{3}
 end
 
 @doc raw"""
-  rotinterp(R0, Rf, n)
+    wahba(A, B, weights=missing)
+
+Solve the Wahba problem: compute the direction cosine matrix best aligning the vectors in ``A`` with the vectors in ``B``, optionally weighting by ``weights``.
+
+Assumes columns in ``A`` and ``B`` are the vectors to consider.
+"""
+function wahba(A::AbstractMatrix{<:Real}, B::AbstractMatrix{<:Real}; weights=missing)
+    if length(A[:,1]) != 3 || length(B[:,1]) != 3
+        throw("Columns of A and B must be 3-vectors!")
+    end
+
+    if length(A[1,:]) != length(B[1,:])
+        throw("A vs. B length mismatch!")
+    end
+
+    if ismissing(weights)
+        weights = ones(length(A[1,:]))
+    else
+        if length(A[1,:]) != length(weights)
+            throw("weights length mismatch!")
+        end
+    end
+
+    D = zeros(typeof(A[1,1]),3,3)
+    for k in 1:length(A[1,:])
+        D += weights[k] * (B[:,k] * A[:,k]')
+    end
+
+    (U, S, V) = svd(D)
+
+    C_BA = U*diagm([1, 1, det(U)*det(V)])*V'
+    return C_BA
+end
+
+@doc raw"""
+    rotinterp(R0, Rf, n)
 
 Interpolate rotation matrices between ``R0`` and ``Rf``, in ``n`` steps. The returned sequence does not contain the endpoint ``Rf``.
 """
 function rotinterp(R0::AbstractMatrix{<:Real}, Rf::AbstractMatrix{<:Real}, n::Int)
-    # Rf0 = (Rf' * R0)
     Rf0 = R0' * Rf
     (ax, ang) = axisangle(Rf0)
-    # println(ax)
-    # println(ang)
 
     R = Array{typeof(R0[1]),3}(undef, 3, 3, n)
     for k in 1:n
         kang = ang * (k - 1) / n
-        R[:, :, k] = axisangle(ax, kang)
+        R[:, :, k] = R0*axisangle(ax, kang)
     end
 
     return R
@@ -349,5 +387,6 @@ function interp(s0::State{<:Real}, sf::State{<:Real}, n::Int)
         #s[k].storage = storages[k]
         #s[k].mode = modes[k]
     end
+    # push!(s, sf)
     return s
 end
