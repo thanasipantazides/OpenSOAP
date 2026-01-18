@@ -25,9 +25,12 @@ end
 
 @kwdef struct PowerProperties{T<:Real}
     capacity::T
-    consumption::T      # later, make this a lookup by Mode
+    base_consumption::T
     solarpanels::Vector{SolarPanel}
+    consumption::Dict{Modes, Float64}   # NEW!!!
 end
+
+
 
 @kwdef struct DataProperties{T<:Real}
     capacity::T

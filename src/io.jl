@@ -56,11 +56,26 @@ function load_spacecraft(file::String)
     for panel in bus_data["power"]["panels"]
         panels = [panels; SolarPanel(panel["normal"], panel["efficiency"], panel["area"])]
     end
-    power_data = PowerProperties(
-        bus_data["power"]["capacity"],
-        bus_data["power"]["base_consumption"],
-        panels
-    )
+    ###############################################
+    ### Go in and add dict values from impax.yaml file. Try to parse file to see if errors occur
+    ###############################################
+    # Build Dict{Modes, Float64} from YAML "consumption.modes"
+modes_dict = Dict{Modes, Float64}()
+if haskey(bus_data["power"], "consumption") && haskey(bus_data["power"]["consumption"], "modes")
+    for (k, v) in bus_data["power"]["consumption"]["modes"]
+        # Convert YAML string key ("science") to Modes.science!!! :)
+        mode_enum = Modes(Symbol(k))
+        modes_dict[mode_enum] = Float64(v)
+    end
+end
+
+power_data = PowerProperties(
+    bus_data["power"]["capacity"],
+    bus_data["power"]["base_consumption"],
+    panels,
+    modes_dict
+)
+
     data_data = DataProperties(
         bus_data["data"]["capacity"],
         bus_data["data"]["base_production"],
