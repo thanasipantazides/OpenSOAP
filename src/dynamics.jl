@@ -482,7 +482,7 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
                 end
                 active_target = best_index # update the target
                 [target_choice[j] = active_target for j in k:best_duration+k-1]
-                [states[j].mode = Int64(downlink::Modes) for j in k:best_duration+k-1]
+                [states[j].mode = downlink::Modes for j in k:best_duration+k-1]
                 # reference_directions[:,k:best_duration + k - 1] = ...
                 [reference_directions[:, j] = position_eci(sim.mission.targets[active_target], times[j]) - states[j].position for j in k:best_duration+k-1]
                 k += best_duration # skip to the end of the window for this target
@@ -493,7 +493,7 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
                     throw("not incrementing (base)!")
                 end
                 [target_choice[j] = active_target for j in k:duration+k-1]
-                [states[j].mode = Int64(downlink::Modes) for j in k:duration+k-1]
+                [states[j].mode = downlink::Modes for j in k:duration+k-1]
                 # reference_directions[:,k:best_duration + k - 1] = ...
                 [reference_directions[:, j] = position_eci(sim.mission.targets[active_target], times[j]) - states[j].position for j in k:duration+k-1]
                 k += duration
@@ -504,7 +504,7 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
             # do science pointing
             active_target = t_mag
             target_choice[k] = active_target
-            states[k].mode = Int64(science::Modes)
+            states[k].mode = science::Modes
             ref_dir = position_eci(sim.mission.targets[active_target], Vector(states[k].position), times[k])
             # if we are in southern magnetic hemisphere i.e. field lines point away from earth, want to actually point antiparallel to the lines.
             if ref_dir'*states[k].position > 0
@@ -516,11 +516,11 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
             # do sun pointing
             active_target = t_sun
             target_choice[k] = active_target
-            states[k].mode = Int64(charging::Modes)
+            states[k].mode = charging::Modes
             reference_directions[:, k] = position_eci(sim.mission.targets[active_target], times[k])
 
         else
-            states[k].mode = Int64(idle::Modes)
+            states[k].mode = idle::Modes
             if k > 1
                 # remain at the previous reference direction
                 reference_directions[:, k] = reference_directions[:, k - 1]
@@ -779,9 +779,9 @@ function assign_attitude_reference!(sim::LEOSimulation,
         stop_maneuver_k = 1
         # select mode changes
         if target_choice[k+1] != target_choice[k]
-            if states[k+1].mode == Int(downlink::Modes)
+            if states[k+1].mode == downlink::Modes
                 # transitioning to a groundstation
-                if states[k].mode == Int(downlink::Modes)
+                if states[k].mode == downlink::Modes
                     # split the difference in the maneuver
                     halfminute_k = minute_k ÷ 2
                     start_maneuver_k = max(1, k - halfminute_k)
@@ -791,8 +791,8 @@ function assign_attitude_reference!(sim::LEOSimulation,
                     start_maneuver_k = max(1, k - minute_k + 1)
                     stop_maneuver_k = k
                 end
-            elseif states[k+1].mode == Int(science::Modes)
-                if states[k].mode == Int(downlink::Modes)
+            elseif states[k+1].mode == science::Modes
+                if states[k].mode == downlink::Modes
                     # priority downlink
                     start_maneuver_k = k
                     stop_maneuver_k = min(nt, k + minute_k)
@@ -801,8 +801,8 @@ function assign_attitude_reference!(sim::LEOSimulation,
                     start_maneuver_k = max(1, k - minute_k)
                     stop_maneuver_k = k
                 end
-            elseif states[k+1].mode == Int(charging::Modes)
-                if states[k].mode == Int(downlink::Modes) || states[k].mode == Int(science::Modes)
+            elseif states[k+1].mode == charging::Modes
+                if states[k].mode == downlink::Modes || states[k].mode == science::Modes
                     # priority downlink or science
                     start_maneuver_k = k
                     stop_maneuver_k = min(nt, k + minute_k)
@@ -814,7 +814,7 @@ function assign_attitude_reference!(sim::LEOSimulation,
             else
                 continue
             end
-            [states[j].mode = Int(pointing::Modes) for j in start_maneuver_k:stop_maneuver_k]
+            [states[j].mode = pointing::Modes for j in start_maneuver_k:stop_maneuver_k]
         end
     end
     
@@ -832,7 +832,7 @@ function assign_attitude_reference!(sim::LEOSimulation,
         
         # for every pointing, just interpolate between first and last attitude. 
         # for downlink and science, min arc slew between timesteps. Should be able to do that everywhere, actually.
-        if states[k].mode == Int(pointing::Modes)
+        if states[k].mode == pointing::Modes
             C_BInext = I(3)
             k_next = findnext(flat_modes .!= flat_modes[k], k)
             if isnothing(k_next) # sim ends during this maneuver
@@ -842,9 +842,9 @@ function assign_attitude_reference!(sim::LEOSimulation,
                 continue
             end
             ref_norm = reference_directions[:,k_next] / norm(reference_directions[:,k_next])
-            # C_BInext = states[k-1].attitude*r_min_arc(states[k-1].attitude*dir_for_mode_B[Modes(states[k_next].mode)], ref_norm)
-            # C_BInext = r_min_arc(states[k-1].attitude*dir_for_mode_B[Modes(states[k_next].mode)], ref_norm)*states[k-1].attitude
-            C_BInext = states[k-1].attitude*r_min_arc(dir_for_mode_B[Modes(states[k_next].mode)], states[k-1].attitude'*ref_norm)
+            # C_BInext = states[k-1].attitude*r_min_arc(states[k-1].attitude*dir_for_mode_B[states[k_next].mode], ref_norm)
+            # C_BInext = r_min_arc(states[k-1].attitude*dir_for_mode_B[states[k_next].mode], ref_norm)*states[k-1].attitude
+            C_BInext = states[k-1].attitude*r_min_arc(dir_for_mode_B[states[k_next].mode], states[k-1].attitude'*ref_norm)
             
             seq = rotinterp(states[k-1].attitude, C_BInext, k_next - k)
             # todo: this is an apparent bug in rotinterp: result is relative to left arg, 
@@ -855,11 +855,11 @@ function assign_attitude_reference!(sim::LEOSimulation,
             end
             
             k = k_next
-        elseif states[k].mode in Int.(track_modes)
+        elseif states[k].mode in track_modes
             ref_norm = reference_directions[:,k] / norm(reference_directions[:,k])
-            # states[k].attitude = r_min_arc(states[k-1].attitude*dir_for_mode_B[Modes(states[k].mode)], ref_norm)
-            # states[k].attitude = states[k-1].attitude*r_min_arc(states[k-1].attitude'*ref_norm, dir_for_mode_B[Modes(states[k].mode)])'
-            states[k].attitude = states[k-1].attitude*r_min_arc(dir_for_mode_B[Modes(states[k].mode)], states[k-1].attitude'*ref_norm)
+            # states[k].attitude = r_min_arc(states[k-1].attitude*dir_for_mode_B[states[k].mode], ref_norm)
+            # states[k].attitude = states[k-1].attitude*r_min_arc(states[k-1].attitude'*ref_norm, dir_for_mode_B[states[k].mode])'
+            states[k].attitude = states[k-1].attitude*r_min_arc(dir_for_mode_B[states[k].mode], states[k-1].attitude'*ref_norm)
             k += 1
         else
             states[k].attitude = states[k-1].attitude
@@ -877,7 +877,9 @@ function simulate_power_data!(sim::LEOSimulation,
     ) where S<:Real
 
     for k in eachindex(times)
-        if k == 1 continue end
+        if k == 1 
+            continue 
+        end
         
         # check modal power consumption, data production.
         # check visibility (eclipse + viewing) of sun for power production
@@ -902,6 +904,8 @@ function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,Stri
     states = Vector{State{Float64}}(undef, n_orbit)
     # initial condition:
     states[1] = State{Float64}(sim)
+    
+    println("running.")
 
     println("simulating ", ((sim.tspan[2] - sim.tspan[1]) / 24 / 3600), " days")
     # propagate orbit

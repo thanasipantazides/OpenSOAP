@@ -1,6 +1,6 @@
 using OpenSOAP
 using LinearAlgebra
-using InfiniteOpt, Ipopt
+using Ipopt
 import HSL_jll
 import MathOptInterface as MOI
 using GLMakie, GeometryBasics

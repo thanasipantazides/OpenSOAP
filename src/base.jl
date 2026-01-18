@@ -32,27 +32,24 @@ end
 # -------------------------------------------------------------------
 # Constructors
 # -------------------------------------------------------------------
+State{S}(pos::Vector{S}, vel::Vector{S}, ang::Vector{S}, att::SMatrix{3,3, Any}, batt::S, stor::S, mode::Modes) where {S<:Real} = 
+    State(
+        SVector{3,S}(pos[1:3]),
+        SVector{3,S}(vel[1:3]),
+        SVector{3,S}(ang[1:3]),
+        convert(SMatrix{3,3,S}, att),
+        batt, stor, mode)
 
-# Create a State from StaticArrays inputs
-State{S}(pos::SVector{3,S}, vel::SVector{3,S}, ang_vel::SVector{3,S},
-          att::SMatrix{3,3,S}, batt::S, stor::S,
-          mod::Union{S,Int64}) where {S<:Real} =
-    State{S}(pos, vel, ang_vel, att, batt, stor, Modes(Int(round(mod))))
-
-# Create a State from standard Arrays (converts them to StaticArrays)
-State{S}(pos::Vector{S}, vel::Vector{S}, ang_vel::Vector{S},
-          att::Matrix{S}, batt::S, stor::S,
-          mod::Union{S,Int64}) where {S<:Real} =
-    State{S}(SVector{3}(pos[1:3]),
-              SVector{3}(vel[1:3]),
-              SVector{3}(ang_vel[1:3]),
-              SMatrix{3,3}(att[1:3,1:3]),
-              batt, stor, Modes(Int(round(mod))))
+State{S}(pos::Vector{S}, vel::Vector{S}, ang::Vector{S}, att::Matrix{S}, batt::S, stor::S, mode::Modes) where {S<:Real} = 
+    State(
+        SVector{3,S}(pos[1:3]),
+        SVector{3,S}(vel[1:3]),
+        SVector{3,S}(ang[1:3]),
+        convert(SMatrix{3,3,S}, att[1:3,1:3]),
+        batt, stor, mode)
 
 # Empty/default State
-State{S}() where {S<:Real} =
-    State{S}(zeros(S,3), zeros(S,3), zeros(S,3),
-              SMatrix{3,3}(I), zero(S), zero(S), safe)
+State{S}() where {S<:Real} = State{S}(zeros(S,3), zeros(S,3), zeros(S,3), I(3), zero(S), zero(S), idle::Modes)
 
 # -------------------------------------------------------------------
 # Arithmetic Operators
@@ -150,7 +147,6 @@ Makie.Quaternion(X::SMatrix{3,3}) = begin
     return Makie.Quaternion(qi, qj, qk, qr)
 end
 
-<<<<<<< HEAD
 function r_from_quat(q::Vector{Float64}) 
     qq = q[1:3]
     qr = q[4]
@@ -164,11 +160,9 @@ Return the vector `u` that has been turned into a matrix cross operator `X`, suc
 
 This is useful, e.g., when working in the Lie group ``\mathfrak{so}(3)``, the tangent space to the rotation group ``\mathrm{SO}(3)``.
 """
-=======
 # -------------------------------------------------------------------
 # Uncross and rotation helpers
 # -------------------------------------------------------------------
->>>>>>> 7fbecddca5e0ddd4cd57421bbeb5762f762c2e97
 function uncross(X::Matrix{<:Number})::Vector{<:Number}
     u = [-X[2, 3]; X[1, 3]; -X[1, 2]]
     if all(u .== 0)
@@ -235,7 +229,6 @@ function ang321(C::SMatrix{3,3})::SVector{3}
     return [yaw; pitch; roll]
 end
 
-<<<<<<< HEAD
 @doc raw"""
     wahba(A, B, weights=missing)
 
@@ -271,6 +264,10 @@ function wahba(A::AbstractMatrix{<:Real}, B::AbstractMatrix{<:Real}; weights=mis
     return C_BA
 end
 
+# -------------------------------------------------------------------
+# Interpolation functions
+# -------------------------------------------------------------------
+
 @doc raw"""
     rotinterp(R0, Rf, n)
 
@@ -279,15 +276,7 @@ Interpolate rotation matrices between ``R0`` and ``Rf``, in ``n`` steps. The ret
 function rotinterp(R0::AbstractMatrix{<:Real}, Rf::AbstractMatrix{<:Real}, n::Int)
     Rf0 = R0' * Rf
     (ax, ang) = axisangle(Rf0)
-
-=======
-# -------------------------------------------------------------------
-# Interpolation functions
-# -------------------------------------------------------------------
-function rotinterp(R0::AbstractMatrix{<:Real}, Rf::AbstractMatrix{<:Real}, n::Int)
-    Rf0 = R0' * Rf
-    (ax, ang) = axisangle(Rf0)
->>>>>>> 7fbecddca5e0ddd4cd57421bbeb5762f762c2e97
+    
     R = Array{typeof(R0[1]),3}(undef, 3, 3, n)
     for k in 1:n
         kang = ang * (k - 1) / n

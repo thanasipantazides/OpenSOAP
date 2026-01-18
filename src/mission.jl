@@ -128,7 +128,7 @@ function State{S}(sim::LEOSimulation) where {S<:Real}
         reshape(sim.initstate[10:18], (3, 3)),
         sim.initstate[19],
         sim.initstate[20],
-        sim.initstate[21]
+        Modes(Int(round(sim.initstate[21])))
     )
 end
 

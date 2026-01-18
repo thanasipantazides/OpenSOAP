@@ -24,7 +24,6 @@ function load_mission(file::String)
     target_spec = [sun; mag_spec; gs_spec...]
 
     bus_spec = load_spacecraft(sp_file)
-    
     mission_data = Mission(
         "impax",
         bus_spec,

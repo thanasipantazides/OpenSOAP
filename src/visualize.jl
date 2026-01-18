@@ -1649,7 +1649,7 @@ function plot_moc!(
     end
     color_trail = lift(time_range) do time_range
         if cb_sc_mode.active[]
-            return [RGBA(mode_colors[Modes(states[k].mode)]..., (k - time_range[1])/length(time_range)) for k in time_range]
+            return [RGBA(mode_colors[states[k].mode]..., (k - time_range[1])/length(time_range)) for k in time_range]
         else
             return [RGBA([42, 133, 255]./255..., (k - time_range[1])/length(time_range)) for k in time_range]
         end
@@ -1932,7 +1932,7 @@ function plot_moc!(
                 ref_tail[][r_idx] = Point3f(states[k].position)
                 p = reference_directions[:,k]
                 ref_head[][r_idx] = Point3f(p ./ norm(p))
-                ref_color[][r_idx] = RGBAf(mode_colors[Modes(states[k].mode)]..., r_idx / n_ref)
+                ref_color[][r_idx] = RGBAf(mode_colors[states[k].mode]..., r_idx / n_ref)
             end
             r_idx += 1
         end

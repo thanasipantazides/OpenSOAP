@@ -21,8 +21,10 @@ function main()
         mkdir("cases")
     catch e
     end
+    
+    println("loaded.")
 
-    @profile times, states, target_visibilities, target_choice, reference_directions, reference_attitude = simulate(sim, Dict{String,String}())
+    times, states, target_visibilities, target_choice, reference_directions, reference_attitude = simulate(sim, Dict{String,String}())
 
     # println("integrating...")
     # soln = integrate_system(dynamics_orbit!, sim.initstate, sim.tspan, sim.dt, sim)
