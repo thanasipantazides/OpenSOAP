@@ -1,3 +1,6 @@
+import InlineStrings
+import Base.reinterpret
+
 # packet structure idea:
 #   protocol byte ID                            [1B]
 #   version ID                                  [1B]
@@ -13,12 +16,26 @@ global const MESSAGE_TYPES = Dict{DataType, UInt16}(
     SatelliteState  =>      0x0020,
     EarthState      =>      0x0103,
     SunState        =>      0x0100,
-    TargetState     =>      0x0400,
+    GroundState     =>      0x0400,
     PlayMessage     =>      0x0c01,
     RateMessage     =>      0x0c02
 )
 
 MESSAGE_LOOKUP = Dict(value => key for (key, value) in MESSAGE_TYPES)
+
+# a little dangerous String serializer
+function reinterpret(::Type{UInt8}, s::InlineStrings.InlineString63)
+    io = IOBuffer()
+    write(io, s)
+    v = take!(io)
+    return v
+end
+# a String deserializer
+function reinterpret(::Type{InlineStrings.InlineString63}, u::Vector{UInt8})::InlineStrings.InlineString63
+    sarr = String(reverse(convert(Vector{Char}, u)))
+    knull = findfirst('\0', sarr)
+    return join(sarr[1:knull-1])
+end
 
 # For PositionState type
 function ser(counter::UInt64, state::PositionState)::Vector{UInt8}
@@ -70,28 +87,30 @@ end
 # For EarthState type
 function ser(counter::UInt64, state::EarthState)::Vector{UInt8}
     c = reinterpret(UInt8, [counter])
+    id = reinterpret(UInt8, [state.id])
     st = reinterpret(UInt8, [state.elapsed_time])
     sa = reinterpret(UInt8, [state.attitude_ECI_ECEF])
 
-    res = vcat(c, st, sa, UInt8[0x0a])
+    res = vcat(c, id, st, sa, UInt8[0x0a])
     return res
 end
 
 # For SunState type
 function ser(counter::UInt64, state::SunState)::Vector{UInt8}
     c = reinterpret(UInt8, [counter])
+    id = reinterpret(UInt8, [state.id])
     st = reinterpret(UInt8, [state.elapsed_time])
     pr = reinterpret(UInt8, [state.priority])
     sa = reinterpret(UInt8, [state.position_ECI])
     vi = reinterpret(UInt8, [state.visible])
     se = reinterpret(UInt8, [state.selected])
 
-    res = vcat(c, st, pr, sa, vi, se, UInt8[0x0a])
+    res = vcat(c, id, st, pr, sa, vi, se, UInt8[0x0a])
     return res
 end
 
-# For TargetState type
-function ser(counter::UInt64, state::TargetState)::Vector{UInt8}
+# For GroundState type
+function ser(counter::UInt64, state::GroundState)::Vector{UInt8}
     c = reinterpret(UInt8, [counter])
     
     id = reinterpret(UInt8, [state.id])

@@ -165,6 +165,7 @@ function show()
     
     tailcolor = Observable(suncolor)
     debuginfo = Observable(rich("."))
+    configfile = Observable("default")
     debugvisible = Observable(true) # todo: create a ControlMessage to enable/disable this
     
     body_frame_v = 0.1*6371e3*[ 0.0 0.0 0.0;
@@ -205,7 +206,7 @@ function show()
     gs_label_pts = Observable([Point3d(NaN)])
     gs_labels = Observable(["."])
     gs_col = Observable([RGBAf(0.0,0.0,0.0,0.0)])
-    gs_dict = Dict{UInt16, TargetState}()
+    gs_dict = Dict{UInt16, GroundState}()
     
     gs_scatter = GLMakie.meshscatter!(
         ax,
@@ -290,6 +291,18 @@ function show()
     
     disable_makie_cam_keyboard!(cameracontrols(ax.scene))
     
+    # handle file drag/drop
+    on(events(ax).dropped_files) do drop
+        for file in drop
+            if occursin(".json", file)
+                configfile[] = file
+                notify(configfile)
+                return
+            end
+        end
+    end
+    
+    # handle keyboard input:
     on(events(ax).keyboardbutton) do event
         if event.action == Keyboard.press || event.action == Keyboard.repeat
             if event.key == Keyboard.space
@@ -399,7 +412,7 @@ function show()
                     direction=-Vec3d(simdata.position_ECI)
                 )
                 
-            elseif typeof(simdata) === TargetState
+            elseif typeof(simdata) === GroundState
                 gs_dict[simdata.id] = simdata
                 
             elseif typeof(simdata) === SatelliteState
@@ -438,7 +451,7 @@ function show()
                 # tailcolor[] = tmp_modecolor[simdata.mode]
                 tailcolor[] = mode_conf.color
                 # tailcolor[] = :black
-                if mode_conf.target_type === TargetState
+                if mode_conf.target_type === GroundState
                     target_dir_ECI[] = [simdata.position_ECI, simdata.target_ECI]
                 elseif mode_conf.target_type === SunState # sun
                     target_dir_ECI[] = [simdata.position_ECI, simdata.position_ECI + 0.5*6371e3*normalize(simdata.target_ECI - simdata.position_ECI)]
@@ -452,8 +465,9 @@ function show()
                 
                 # debuginfo[] = rich("target: ", rich(tmp_modename[simdata.mode], color=tmp_modecolor[simdata.mode]))
                 debuginfo[] = rich(
-                    "mode:   ", rich(String(Printf.@sprintf "%20s" mode_conf.name), "\n",  color=tailcolor[]),
-                    "target: ", rich(String(Printf.@sprintf "%20s" string(mode_conf.target_type)))
+                    "mode:   ", rich(String(Printf.@sprintf "%30s" mode_conf.name), "\n",  color=tailcolor[]),
+                    "target: ", rich(String(Printf.@sprintf "%30s" string(mode_conf.target_type)), "\n"),
+                    "config: ", rich(String(Printf.@sprintf "%30s" configfile[]))
                 )
                 
                 # debuginfo[] = rich("target: ", "nothin")

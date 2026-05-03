@@ -7,7 +7,7 @@ import SatelliteToolboxTransformations, SatelliteToolboxBase, SatelliteToolboxCe
 import Base: +, *
 import Makie
 
-global const unixsockname = "/tmp/misik_out.sock"
+global const unixsockname = "/tmp/soap_out.sock"
 global const IDType = UInt16
 # global const unixsock"tname = "127.0.0.1"
 
@@ -51,7 +51,9 @@ struct TargetConfig<:AbstractConfig
     id::IDType
     name::InlineStrings.String63
     dynamic_id::IDType
-    color::Makie.RGBAf
+    # color::Makie.RGBAf
+    position_cone::Float64  # must contain the spacecraft to get the target
+    pointing_cone::Float64  # spacecraft sensor must put target inside this cone
 end
 
 # find the config struct for a corresponding dynamic (state) struct by id
@@ -113,20 +115,21 @@ end
 SatelliteState() = SatelliteState(0x0000, 0.0, Vec3d(0), Vec3d(0), Vec3d(0), Vec3d(0),Vec3d(0), Mat3d(I), 0.0,0.0,0.0,0.0, 0xffff, Vec3d(0.0), 0x00, 0x00)
 
 mutable struct EarthState<:AbstractTarget
+    id::IDType
     elapsed_time::Float64
     attitude_ECI_ECEF::Mat3d
 end
 
 mutable struct SunState<:AbstractTarget
+    id::IDType
     elapsed_time::Float64
-    priority::UInt16
+    priority::UInt16 # todo: make this a Mode priority, not Target priority.
     position_ECI::Point3d
     visible::Bool
     selected::Bool
 end
 
-# todo: rename "GroundState" or something to convey a const LLA value (rather than a generic target)
-mutable struct TargetState<:AbstractTarget
+mutable struct GroundState<:AbstractTarget
     const id::IDType
     elapsed_time::Float64
     
@@ -215,15 +218,15 @@ function run()
         "do_J2"             => true
     )
     groundstations = [
-        TargetState(0x0001, 0.0, 10, pi/180*Vec3d(78.220, 15.55, 1718.0), SatelliteToolboxTransformations.r_ecef_to_eci(SatelliteToolboxTransformations.ITRF(), SatelliteToolboxTransformations.J2000(), SatelliteToolboxBase.date_to_jd(start_time), eop)*SatelliteToolboxTransformations.geodetic_to_ecef((pi/180*Vec3d(78.22, 15.55, 1718.0))...), false, false),
-        TargetState(0x0002, 0.0, 9,  pi/180*Vec3d(-53.167, -70.933, 34.0), SatelliteToolboxTransformations.r_ecef_to_eci(SatelliteToolboxTransformations.ITRF(), SatelliteToolboxTransformations.J2000(), SatelliteToolboxBase.date_to_jd(start_time), eop)*SatelliteToolboxTransformations.geodetic_to_ecef((pi/180*Vec3d(-53.167, -70.933, 34.0))...), false, false),
-        TargetState(0x0003, 0.0, 8,  pi/180*Vec3d(-33.86777, 151.21, 5.0), SatelliteToolboxTransformations.r_ecef_to_eci(SatelliteToolboxTransformations.ITRF(), SatelliteToolboxTransformations.J2000(), SatelliteToolboxBase.date_to_jd(start_time), eop)*SatelliteToolboxTransformations.geodetic_to_ecef((pi/180*Vec3d(-33.86777, 151.21, 5.0))...), false, false),
+        GroundState(0x0001, 0.0, 10, pi/180*Vec3d(78.220, 15.55, 1718.0), SatelliteToolboxTransformations.r_ecef_to_eci(SatelliteToolboxTransformations.ITRF(), SatelliteToolboxTransformations.J2000(), SatelliteToolboxBase.date_to_jd(start_time), eop)*SatelliteToolboxTransformations.geodetic_to_ecef((pi/180*Vec3d(78.22, 15.55, 1718.0))...), false, false),
+        GroundState(0x0002, 0.0, 9,  pi/180*Vec3d(-53.167, -70.933, 34.0), SatelliteToolboxTransformations.r_ecef_to_eci(SatelliteToolboxTransformations.ITRF(), SatelliteToolboxTransformations.J2000(), SatelliteToolboxBase.date_to_jd(start_time), eop)*SatelliteToolboxTransformations.geodetic_to_ecef((pi/180*Vec3d(-53.167, -70.933, 34.0))...), false, false),
+        GroundState(0x0003, 0.0, 8,  pi/180*Vec3d(-33.86777, 151.21, 5.0), SatelliteToolboxTransformations.r_ecef_to_eci(SatelliteToolboxTransformations.ITRF(), SatelliteToolboxTransformations.J2000(), SatelliteToolboxBase.date_to_jd(start_time), eop)*SatelliteToolboxTransformations.geodetic_to_ecef((pi/180*Vec3d(-33.86777, 151.21, 5.0))...), false, false),
     ]
     
     # modelist = [
     #     ModeConfig(0x0101, "idle",      Nothing,    Makie.RGBAf(42/255, 133/255, 255/255), 5.0, 1e3, Vec3d(1.0,0.0,0.0)),
     #     ModeConfig(0x0102, "charging",  SunState,   Makie.RGBAf(255/255, 201/255, 74/255), 5.0, 10e3, Vec3d(-1.0,0.0,0.0)),
-    #     ModeConfig(0x0103, "downlink",  TargetState, Makie.RGBAf(157/255, 226/255, 107/255), 23.0, 10e3, Vec3d(1.0,0.0,0.0)),
+    #     ModeConfig(0x0103, "downlink",  State, Makie.RGBAf(157/255, 226/255, 107/255), 23.0, 10e3, Vec3d(1.0,0.0,0.0)),
     #     ModeConfig(0x0104, "science",   Nothing,    Makie.RGBAf(206/255, 155/255, 255/255), 20.0, 10e3, Vec3d(1.0,0.0,0.0))
     # ]
     
@@ -257,18 +260,20 @@ function run()
         false, false                # target visible, pointed
     )
     sun_state = SunState(
+        IDType(0x00e0),
         0,
         12,
         SatelliteToolboxCelestialBodies.sun_position_mod(start_time),
         false, false
     )
     earth_state = EarthState(
+        IDType(0x00f0),
         0,
         SatelliteToolboxTransformations.r_eci_to_ecef(SatelliteToolboxTransformations.J2000(), SatelliteToolboxTransformations.ITRF(), SatelliteToolboxBase.date_to_jd(start_time), eop)
     )
     
+    println("waiting for connection...")
     sock = Sockets.accept(server)
-    println("listening...")
     
     play = Ref(UInt8(0x01))
     playrate = Ref(UInt8(0xff))

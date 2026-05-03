@@ -1,6 +1,6 @@
 using LinearAlgebra
 import Dates
-import SatelliteToolboxTransformations, SatelliteToolboxBase
+import SatelliteToolboxTransformations, SatelliteToolboxBase, SatelliteToolboxCelestialBodies
 
 function dynamics_orbit(x::PositionState, dt::Float64)::PositionState
     dv = -SatelliteToolboxBase.GM_EARTH / (norm(x.position_ECI)^3) .* x.position_ECI
@@ -91,11 +91,11 @@ function push_sun(sun::SunState, x::SatelliteState, dt::Float64, t::Dates.DateTi
     sun.elapsed_time += dt
     sun.position_ECI = SatelliteToolboxCelestialBodies.sun_position_mod(t)
     # todo: replace hardcode Earth radius
-    sun.visible = sun.position_ECI'*x.position_ECI / norm(sun.position_ECI) / norm(x.position_ECI) > -sqrt(max(0, 1 - (6371e3)^2 / norm(x.position_ECI)^2))
+    sun.visible = sun.position_ECI'*x.position_ECI / norm(sun.position_ECI) / norm(x.position_ECI) > -sqrt(max(0, 1 - (SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS)^2 / norm(x.position_ECI)^2))
     return sun
 end
 
-function push_targets(targets::Vector{TargetState}, x::SatelliteState, dt::Float64, t::Dates.DateTime, params)::Vector{TargetState}
+function push_targets(targets::Vector{GroundState}, x::SatelliteState, dt::Float64, t::Dates.DateTime, params)::Vector{GroundState}
     min_priority = UInt16(0xffff)
     for target in targets
         target.elapsed_time += dt
@@ -122,7 +122,7 @@ function mode_lookup(choice::T, params)::Union{ModeConfig, Nothing} where T<:Uni
 
 end
 
-function clamp_attitude_align!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{TargetState}, mode::ModeConfig, dt::Float64, params; secondary::Vec3d=Vec3d(0.0,0.0,1.0))
+function clamp_attitude_align!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{GroundState}, mode::ModeConfig, dt::Float64, params; secondary::Vec3d=Vec3d(0.0,0.0,1.0))
     from_Body = normalize(sat.attitude_ECI_Body*mode.direction_Body)
     to_ECI = normalize(sat.target_ECI - sat.position_ECI)
     # to_ECI = normalize(sat.position_ECI - sat.target_ECI)
@@ -145,7 +145,7 @@ function clamp_attitude_align!(sat::SatelliteState, sun::SunState, earth::EarthS
     sat.attitude_ECI_Body = sat.attitude_ECI_Body'*C_push
 end
 
-function set_mode!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{TargetState}, dt::Float64, t::Dates.DateTime, params)
+function set_mode!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{GroundState}, dt::Float64, t::Dates.DateTime, params)
     candidates = [sun; targets...]
     visibles = filter(c -> c.visible, candidates) # select the visible ones only
     if length(visibles) > 0
@@ -163,7 +163,7 @@ function set_mode!(sat::SatelliteState, sun::SunState, earth::EarthState, target
     sat.target_ECI = Vec3d(NaN)
 end
 
-function set_power_data!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{TargetState}, dt::Float64, t::Dates.DateTime, params)
+function set_power_data!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{GroundState}, dt::Float64, t::Dates.DateTime, params)
     mode_conf = params["modes"][sat.mode]
     power_out = mode_conf.power_consumption
     data_in = mode_conf.data_production
@@ -183,7 +183,7 @@ function set_power_data!(sat::SatelliteState, sun::SunState, earth::EarthState, 
     sat.storage_level = min(params["storage_max"], max(0.0, sat.storage_level + dt*(data_in - data_out)))
 end
 
-function push_sim!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{TargetState}, dt::Float64, t::Dates.DateTime, params)
+function push_sim!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{GroundState}, dt::Float64, t::Dates.DateTime, params)
     sat = push_satellite(sat, dt, params)
     sun = push_sun(sun, sat, dt, t, params)
     earth = push_earth(earth, dt, t, params)
