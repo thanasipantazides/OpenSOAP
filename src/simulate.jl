@@ -19,7 +19,7 @@ function dynamics_orbit(r_ECI::Vec3d, v_ECI::Vec3d, pert_F_ECI::Vec3d, dt::Float
     return (dr, dv)
 end
 
-function push_orbit(x::PositionState, dt::Float64)::PositionState
+function step_orbit(x::PositionState, dt::Float64)::PositionState
     # RK4
     k1 = dynamics_orbit(x, dt)
     k2 = dynamics_orbit(x + dt/2*k1, dt)
@@ -41,7 +41,7 @@ function euler_rigid_dynamics(w_Body::Vec3d, pert_M_Body::Vec3d, dt::Float64, pa
     return dw
 end
 
-function push_attitude(x::AttitudeState, dt::Float64, params)::AttitudeState
+function step_attitude(x::AttitudeState, dt::Float64, params)::AttitudeState
     # RK4
     k1 = euler_rigid_dynamics(x, dt, params)
     k2 = euler_rigid_dynamics(x + dt/2*k1, dt, params)
@@ -54,7 +54,7 @@ function push_attitude(x::AttitudeState, dt::Float64, params)::AttitudeState
     return res
 end
 
-function push_satellite(x::SatelliteState, dt::Float64, params)::SatelliteState
+function step_satellite(x::SatelliteState, dt::Float64, params)::SatelliteState
     newx = x
     
     ext_M_Body = Vec3d(0.0)
@@ -81,13 +81,35 @@ function push_satellite(x::SatelliteState, dt::Float64, params)::SatelliteState
     return newx
 end 
 
-function push_earth(x::EarthState, dt::Float64, t::Dates.DateTime, params)::EarthState
+function step!(earth::EarthState, sat::SatelliteState, dt::Float64, t::Dates.DateTime, config::TargetConfig, params)
+    earth.elapsed_time += dt
+    earth.attitude_ECI_ECEF = SatelliteToolboxTransformations.r_eci_to_ecef(SatelliteToolboxTransformations.J2000(), SatelliteToolboxTransformations.ITRF(), SatelliteToolboxBase.date_to_jd(t), eop)
+end
+
+function step!(sun::SunState, sat::SatelliteState, dt::Float64, t::Dates.DateTime, config::TargetConfig, params)
+    sun.elapsed_time += dt
+    sun.position_ECI = SatelliteToolboxCelestialBodies.sun_position_mod(t)
+    sun.visible = sun.position_ECI'*sat.position_ECI / norm(sun.position_ECI) / norm(sat.position_ECI) > -sqrt(max(0, 1 - (SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS)^2 / norm(sat.position_ECI)^2))
+end
+
+function step!(gs::GroundState, sat::SatelliteState, dt::Float64, t::Dates.DateTime, config::TargetConfig, params)
+    gs.elapsed_time += dt
+    gs.position_ECI = SatelliteToolboxTransformations.r_ecef_to_eci(SatelliteToolboxTransformations.ITRF(), SatelliteToolboxTransformations.J2000(), SatelliteToolboxBase.date_to_jd(t), eop)*SatelliteToolboxTransformations.geodetic_to_ecef(gs.position_LLA...)
+    # todo: replace hardcoded mask with params dict
+    if (sat.position_ECI - gs.position_ECI)'*gs.position_ECI / norm(sat.position_ECI - gs.position_ECI) / norm(gs.position_ECI) > cos(config.position_cone)
+        gs.visible = true
+    else
+        gs.visible = false
+    end
+end
+
+function step_earth(x::EarthState, dt::Float64, t::Dates.DateTime, params)::EarthState
     x.elapsed_time += dt
     x.attitude_ECI_ECEF = SatelliteToolboxTransformations.r_eci_to_ecef(SatelliteToolboxTransformations.J2000(), SatelliteToolboxTransformations.ITRF(), SatelliteToolboxBase.date_to_jd(t), eop)
     return x
 end
 
-function push_sun(sun::SunState, x::SatelliteState, dt::Float64, t::Dates.DateTime, params)::SunState
+function step_sun(sun::SunState, x::SatelliteState, dt::Float64, t::Dates.DateTime, params)::SunState
     sun.elapsed_time += dt
     sun.position_ECI = SatelliteToolboxCelestialBodies.sun_position_mod(t)
     # todo: replace hardcode Earth radius
@@ -95,7 +117,7 @@ function push_sun(sun::SunState, x::SatelliteState, dt::Float64, t::Dates.DateTi
     return sun
 end
 
-function push_targets(targets::Vector{GroundState}, x::SatelliteState, dt::Float64, t::Dates.DateTime, params)::Vector{GroundState}
+function step_targets(targets::Vector{GroundState}, x::SatelliteState, dt::Float64, t::Dates.DateTime, params)::Vector{GroundState}
     min_priority = UInt16(0xffff)
     for target in targets
         target.elapsed_time += dt
@@ -110,21 +132,11 @@ function push_targets(targets::Vector{GroundState}, x::SatelliteState, dt::Float
     return targets
 end
 
-function mode_lookup(choice::T, params)::Union{ModeConfig, Nothing} where T<:Union{AbstractTarget, Nothing}
-    k = keys(params["modes"])
-    all_modes = [params["modes"][k] for k in keys(params["modes"])]
-    mode = filter(m -> m.target_type === typeof(choice), all_modes)
-    if length(mode) == 1
-        return mode[1]
-    else
-        throw(DomainError)
-    end
-
-end
-
-function clamp_attitude_align!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{GroundState}, mode::ModeConfig, dt::Float64, params; secondary::Vec3d=Vec3d(0.0,0.0,1.0))
+function clamp_attitude_align!(sat::SatelliteState, mode::ModeConfig, dt::Float64, target::AbstractTarget, sat_config::SatelliteConfig, params; secondary::Vec3d=Vec3d(0.0,0.0,1.0))
+    
+    # target = targets[findfirst(t -> t.id == sat.target, targets)]
     from_Body = normalize(sat.attitude_ECI_Body*mode.direction_Body)
-    to_ECI = normalize(sat.target_ECI - sat.position_ECI)
+    to_ECI = normalize(target.position_ECI - sat.position_ECI)
     # to_ECI = normalize(sat.position_ECI - sat.target_ECI)
     
     if isnan(norm(from_Body)) || isnan(norm(to_ECI)) # cases where either vector is NaN or zero
@@ -140,56 +152,82 @@ function clamp_attitude_align!(sat::SatelliteState, sun::SunState, earth::EarthS
     
     # to slew at a fixed rate to the target:
     rot_axis_Body = normalize(uncross(log(C_diff)))
-    sat.angular_velocity_ECI_Body = params["max_angular_rate"]*dt*rot_axis_Body
+    sat.angular_velocity_ECI_Body = sat_config.angular_rate_max*dt*rot_axis_Body
     C_push = exp(cross(sat.angular_velocity_ECI_Body))
     sat.attitude_ECI_Body = sat.attitude_ECI_Body'*C_push
 end
 
-function set_mode!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{GroundState}, dt::Float64, t::Dates.DateTime, params)
-    candidates = [sun; targets...]
-    visibles = filter(c -> c.visible, candidates) # select the visible ones only
-    if length(visibles) > 0
-        choice = visibles[findmin(c -> c.priority, visibles)[2]] # select the lowest (highest) priority one only
-        mode_conf = mode_lookup(choice, params)
-        if !isnothing(mode_conf)
-            sat.mode = mode_conf.id
-            sat.target_ECI = choice.position_ECI
-            clamp_attitude_align!(sat, sun, earth, targets, mode_conf, dt, params)
+# todo: change targets::Vector{GroundState} to targets::Vector{AbstractTarget} so it includes SunTarget.
+function set_mode!(sat::SatelliteState, targets::Vector{AbstractTarget}, target_configs::Vector{TargetConfig}, dt::Float64, t::Dates.DateTime, modes::Vector{ModeConfig}, mode_table::Matrix{UInt8}, sat_config::SatelliteConfig, params)
+    
+    visibility = map(c -> c.visible, targets)
+    feasible = mode_table'*visibility
+    best_priority = typemax(modes[1].priority)
+    modechoice = nothing
+    mode_k = 0
+    for (m,mode) in enumerate(modes)
+        if feasible[m] > 0 && mode.priority < best_priority
+            modechoice = mode
+            best_priority = mode.priority
+            mode_k = m # gives the column index (mode index) in mode_table we have selected
         end
-        return
     end
-    mode_conf = mode_lookup(nothing, params)
-    sat.mode = mode_conf.id
-    sat.target_ECI = Vec3d(NaN)
+    
+    targetchoice = nothing
+    if isnothing(modechoice) # due to lack of feasible targets
+        idlemode = modes[findfirst(m -> length(m.target_ids) == 0, modes)]
+        sat.mode = idlemode.id
+        sat.target = typemax(IDType)
+    else
+        sat.mode = modechoice.id
+        # find the target actually used for this mode, so we can point at it:
+        targetchoice = targets[findfirst(t -> t != 0, visibility .* mode_table[:,mode_k])]
+        sat.target = targetchoice.id
+        
+        clamp_attitude_align!(sat, modechoice, dt, targetchoice, sat_config, params)
+    end
+    set_power_data!(sat, targets, target_configs, dt, t, modes, targetchoice, sat_config, params)
 end
 
-function set_power_data!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{GroundState}, dt::Float64, t::Dates.DateTime, params)
-    mode_conf = params["modes"][sat.mode]
+function set_power_data!(sat::SatelliteState, targets::Vector{AbstractTarget}, target_configs::Vector{TargetConfig}, dt::Float64, t::Dates.DateTime, modes::Vector{ModeConfig}, target::Union{Nothing, AbstractTarget}, sat_config::SatelliteConfig, params)
+    sun = targets[findfirst(x -> isa(x, SunState), targets)]
+    
+    mode_conf = filter(m -> m.id == sat.mode, modes)[1] # todo: add arg modes::Dict{IDType, ModeConfig} to use for lookup.
+    # mode_conf = params["modes"][sat.mode] 
     power_out = mode_conf.power_consumption
     data_in = mode_conf.data_production
     sun_cos = normalize(sun.position_ECI)'*sat.attitude_ECI_Body*normalize(mode_conf.direction_Body)
-    power_in = sun.visible*params["irradiance"]*params["solar_panel_area"]*params["solar_panel_efficiency"]*max(0.0, sun_cos)
+    # todo: pull irradiance from sim config
+    power_in = 1360*sun.visible*sat_config.power_solar_panel_efficiency*sat_config.power_solar_panel_area*max(0.0, sun_cos)
     
     # todo: replace with TargetConfig-specific downlink rate
-    data_out = any([target.visible for target in targets])*params["downlink_rate"]
+    data_out = 0.0
+    if isa(target, GroundState)
+        conf = find_config(target, target_configs)
+        data_out = conf.data_consumption
+    end
     
     # cases where sun vector is not set, or is behind the solar panels
     if isnan(power_in) || power_in < 0.0
         power_in = 0.0
     end
     
+    sat.net_power = power_in - power_out
+    sat.net_data = data_in - data_out
     # update battery level and rectify
-    sat.battery_level = min(params["battery_max"], max(0.0, sat.battery_level + dt*(power_in - power_out)))
-    sat.storage_level = min(params["storage_max"], max(0.0, sat.storage_level + dt*(data_in - data_out)))
+    sat.battery_level = min(sat_config.power_battery_max, max(0.0, sat.battery_level + dt*(sat.net_power)))
+    sat.storage_level = min(sat_config.data_storage_max, max(0.0, sat.storage_level + dt*(sat.net_data)))
 end
 
-function push_sim!(sat::SatelliteState, sun::SunState, earth::EarthState, targets::Vector{GroundState}, dt::Float64, t::Dates.DateTime, params)
-    sat = push_satellite(sat, dt, params)
-    sun = push_sun(sun, sat, dt, t, params)
-    earth = push_earth(earth, dt, t, params)
-    targets = push_targets(targets, sat, dt, t, params)
+function step_sim!(sat::SatelliteState, earth::EarthState, targets::Vector{AbstractTarget}, dt::Float64, t::Dates.DateTime, target_configs::Vector{TargetConfig}, modes::Vector{ModeConfig}, mode_table::Matrix{UInt8}, sat_config::SatelliteConfig, params)
+    sat = step_satellite(sat, dt, params)
+    # sun = step_sun(sun, sat, dt, t, params)
+    earth = step_earth(earth, dt, t, params)
+    # targets = step_targets(targets, sat, dt, t, params)
     
-    set_mode!(sat, sun, earth, targets, dt, t, params)
+    for (target, target_conf) in zip(targets, target_configs)
+        step!(target, sat, dt, t, target_conf, params)
+    end
     
-    set_power_data!(sat, sun, earth, targets, dt, t, params)
+    set_mode!(sat, targets, target_configs, dt, t, modes, mode_table, sat_config, params)
 end

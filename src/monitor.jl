@@ -90,6 +90,12 @@ function disable_makie_cam_keyboard!(cam::Makie.Camera3D)
     # remember to call update_cam!(lscene.scene, cam) after to apply changes
 end
 
+function handle_new_config(path::AbstractString)
+    d = Dict(load_jsonc(path))
+    res = load_config(d)
+    return res
+end
+
 function show()
     # server = Sockets.listen(unixsockname)
     sock = Sockets.UDPSocket()
@@ -101,12 +107,11 @@ function show()
     texture = Observable(load_earth_texture_to_ecef(joinpath(textureprefix, textures[texturek])))
     X_ECI, Y_ECI, Z_ECI = get_sphere_mesh(texture[])
     
-    tmp_groundstations = [
-        Dict{String,Any}("name"=>"Svalbard",     "operator"=>"KSAT", "latitude"=>78.22, "longitude"=>15.65, "altitude"=>1718.0, "elevation"=>10.0, "viewable"=>false),
-        Dict{String,Any}("name"=>"Punta Arenas", "operator"=>"AWS",  "latitude"=>-53.1666667, "longitude"=>-70.933333, "altitude"=>34.0, "elevation"=>10.0, "viewable"=>false)
-    ]
+    sim, sat, sat_config, targets, target_configs, modes, mode_table = handle_new_config(joinpath("config","example.jsonc"))
     
-    modes_table = mode_table(load_mode_config(""))
+    mode_table = tabulate(modes)
+    target_state_table = tabulate(targets)
+    target_config_table = tabulate(target_configs)
     
     pointbufflen = 1000
     obbufflen = 10^4
@@ -114,6 +119,8 @@ function show()
     pos_ECI = Observable([Point3d(NaN) for k in 1:pointbufflen])
     ob_time = Observable([start_time + Dates.Second(k) for k in 1:obbufflen])
     batt = Observable([NaN for k in 1:obbufflen])
+    stor = Observable([NaN for k in 1:obbufflen])
+    power = Observable([NaN for k in 1:obbufflen])
     data = Observable([NaN for k in 1:obbufflen])
     target_dir_ECI = Observable([Point3d(NaN) for k in 1:2])
     q_ECEF_ECI = Observable(Makie.Quaternion(0.0,0.0,0.0,1.0))
@@ -137,16 +144,18 @@ function show()
     fig = GLMakie.Figure(size=(730, 580))
     display(fig)
     ax = LScene(fig[1:5,1:3], show_axis=false, scenekw=(lights=[al,dl],), tellwidth=false)
-    ax_batt = Axis(fig[1,4], ylabel="battery", ylabelfont="OCR-B", tellwidth=false)
+    ax_batt = Axis(fig[1,4], ylabel="battery [%]", ylabelfont="OCR-B", tellwidth=false)
     ylims!(ax_batt, 0.0, 102)
-    ax_data = Axis(fig[2,4], ylabel="onboard\ndata", ylabelfont="OCR-B", tellwidth=false)
-    ylims!(ax_data, 0.0, 102)
+    ax_power = Axis(fig[2,4], ylabel="power [W]", ylabelfont="OCR-B", tellwidth=false)
+    ax_stor = Axis(fig[3,4], ylabel="onboard\ndata [%]", ylabelfont="OCR-B", tellwidth=false)
+    ylims!(ax_stor, 0.0, 102)
+    ax_data = Axis(fig[4,4], ylabel="datarate\n[Mbps]", ylabelfont="OCR-B", tellwidth=false)
     # hidedecorations!(ob)
     hidespines!(ax_batt)
+    hidespines!(ax_power)
+    hidespines!(ax_stor)
     hidespines!(ax_data)
-    # xlims!(ax, [-6e3, 6e3])
-    # ylims!(ax, [-6e3, 6e3])
-    # zlims!(ax, [-6e3, 6e3])
+    linkxaxes!(ax_batt, ax_power, ax_stor, ax_data)
     
     idlecolor = RGBAf(42/255, 133/255, 255/255)
     gscolor = RGBAf(157/255, 226/255, 107/255)
@@ -260,6 +269,20 @@ function show()
         color=:black,
         linewidth=1
     )
+    stor_lines = lines!(
+        ax_stor,
+        ob_time,
+        stor,
+        color=:black,
+        linewidth=1
+    )
+    power_lines = lines!(
+        ax_power,
+        ob_time,
+        power,
+        color=:black,
+        linewidth=1
+    )
     data_lines = lines!(
         ax_data,
         ob_time,
@@ -297,6 +320,9 @@ function show()
             if occursin(".json", file)
                 configfile[] = file
                 notify(configfile)
+                
+                res = handle_new_config(configfile[])
+                println(res)
                 return
             end
         end
@@ -387,6 +413,8 @@ function show()
             nbdata = readbytes!(sock, buff)
             count, simdata = des(type, buff)
             
+            # println(typeof(simdata))
+            
             if typeof(simdata) === PositionState # unused
                 circshift!(pos_ECI[], -1)
                 pos_ECI[][end] = Point3d(simdata.position_ECI)
@@ -397,11 +425,11 @@ function show()
                 notify(met)
                 
             elseif typeof(simdata) === AttitudeState # unused
-                GLMakie.rotate!(body_mesh, dcm_to_quat(simdata.attitude_ECI_Body'))
-                GLMakie.translate!(body_mesh, pos_ECI[][end])
+                # GLMakie.rotate!(body_mesh, dcm_to_quat(simdata.attitude_ECI_Body'))
+                # GLMakie.translate!(body_mesh, pos_ECI[][end])
                 
             elseif typeof(simdata) === EarthState
-                q_ECEF_ECI[] = dcm_to_quat(simdata.attitude_ECI_ECEF')
+                q_ECEF_ECI[] = dcm_to_quat(simdata.attitude_ECI_ECEF)
                 notify(q_ECEF_ECI)
                 GLMakie.rotate!(earth_mesh, q_ECEF_ECI[])
                 
@@ -411,9 +439,12 @@ function show()
                     color=RGBf(243/255, 241/255, 218/255), 
                     direction=-Vec3d(simdata.position_ECI)
                 )
+                target_state_table[simdata.id] = simdata
                 
             elseif typeof(simdata) === GroundState
                 gs_dict[simdata.id] = simdata
+                target_state_table[simdata.id] = simdata
+                # met[] = simdata.elapsed_time
                 
             elseif typeof(simdata) === SatelliteState
                 # update mission clock
@@ -426,47 +457,55 @@ function show()
                 notify(pos_ECI)
                 
                 circshift!(batt[], -1)
-                # todo: replace with lookup of battery capacity
-                batt[][end] = simdata.battery_level / 84/36.0 
+                batt[][end] = simdata.battery_level / sat_config.power_battery_max * 100
                 notify(batt)
-                
+                circshift!(stor[], -1)
+                stor[][end] = simdata.storage_level / sat_config.data_storage_max * 100
+                notify(stor)
+                circshift!(power[], -1)
+                power[][end] = simdata.net_power
+                notify(power)
                 circshift!(data[], -1)
-                # todo: replace with lookup of storage capacity
-                data[][end] = simdata.storage_level / 8e9 * 100
+                data[][end] = simdata.net_data / 1e6
                 notify(data)
-                
                 circshift!(ob_time[], -1)
                 ob_time[][end] = start_time + Dates.Millisecond(1000*simdata.elapsed_time)
                 notify(ob_time)
                 
                 # update attitude
-                GLMakie.rotate!(body_mesh, dcm_to_quat(simdata.attitude_ECI_Body'))
+                q = dcm_to_quat(simdata.attitude_ECI_Body)
+                GLMakie.rotate!(body_mesh, q)
                 GLMakie.translate!(body_mesh, pos_ECI[][end])
                 
-                GLMakie.rotate!(body_frame, dcm_to_quat(simdata.attitude_ECI_Body'))
+                GLMakie.rotate!(body_frame, q)
                 GLMakie.translate!(body_frame, pos_ECI[][end])
                 
                 # update color and target direction
-                mode_conf = modes_table[simdata.mode]
+                mode_conf = mode_table[simdata.mode]
                 # tailcolor[] = tmp_modecolor[simdata.mode]
                 tailcolor[] = mode_conf.color
                 # tailcolor[] = :black
-                if mode_conf.target_type === GroundState
-                    target_dir_ECI[] = [simdata.position_ECI, simdata.target_ECI]
-                elseif mode_conf.target_type === SunState # sun
-                    target_dir_ECI[] = [simdata.position_ECI, simdata.position_ECI + 0.5*6371e3*normalize(simdata.target_ECI - simdata.position_ECI)]
-                elseif mode_conf.target_type === Nothing # idle
+                # todo: rework with lookups to targets
+                
+                if simdata.target == typemax(IDType)
                     target_dir_ECI[] = [Point3d(NaN), Point3d(NaN)]
+                elseif isa(target_state_table[simdata.target], SunState)
+                    target_dir_ECI[] = [simdata.position_ECI, simdata.position_ECI + 0.5*6371e3*normalize(target_state_table[simdata.target].position_ECI - simdata.position_ECI)]
+                elseif isa(target_state_table[simdata.target], GroundState)
+                    target_dir_ECI[] = [simdata.position_ECI, target_state_table[simdata.target].position_ECI]
                 else
                     println("unidentified target type: ", typeof(mode_conf.target_type))
                 end
+                
                 notify(tailcolor)
                 notify(target_dir_ECI)
                 
                 # debuginfo[] = rich("target: ", rich(tmp_modename[simdata.mode], color=tmp_modecolor[simdata.mode]))
+                target_name = (simdata.target == typemax(IDType)) ? "" : typeof(target_state_table[simdata.target])
+                
                 debuginfo[] = rich(
                     "mode:   ", rich(String(Printf.@sprintf "%30s" mode_conf.name), "\n",  color=tailcolor[]),
-                    "target: ", rich(String(Printf.@sprintf "%30s" string(mode_conf.target_type)), "\n"),
+                    "target: ", rich(String(Printf.@sprintf "%30s" string(target_name)), "\n"),
                     "config: ", rich(String(Printf.@sprintf "%30s" configfile[]))
                 )
                 
@@ -481,14 +520,16 @@ function show()
             notify(gs_pts)
             gs_label_pts[] = [1.1*gs_dict[key].position_ECI for key in keys(gs_dict)]
             notify(gs_label_pts)
-            gs_labels[] = [string(gs_dict[key].id) for key in keys(gs_dict)]
+            gs_labels[] = [string(find_config(gs_dict[key], target_configs).name) for key in keys(gs_dict)]
             notify(gs_labels)
             gs_col[] = [gs_dict[key].visible ? gscolor : idlecolor for key in keys(gs_dict)]
             notify(gs_col)
             
             bytecount += len + 8
             
-            @async GLMakie.reset_limits!(ax_batt)
+            # @async GLMakie.reset_limits!(ax_batt)
+            # @async GLMakie.reset_limits!(ax_stor)
+            @async GLMakie.reset_limits!(ax_power)
             @async GLMakie.reset_limits!(ax_data)
             
             if time() - lastratetime > secondly_debug

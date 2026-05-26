@@ -76,7 +76,7 @@ function ser(counter::UInt64, state::SatelliteState)::Vector{UInt8}
     f10 = reinterpret(UInt8, [state.battery_level])
     f11 = reinterpret(UInt8, [state.storage_level])
     f12 = reinterpret(UInt8, [state.mode])
-    f13 = reinterpret(UInt8, [state.target_ECI])
+    f13 = reinterpret(UInt8, [state.target])
     f14 = reinterpret(UInt8, [state.target_visible])
     f15 = reinterpret(UInt8, [state.target_pointed])
     
