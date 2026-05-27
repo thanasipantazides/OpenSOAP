@@ -79,7 +79,7 @@ function format_clock(met::Float64, start_time::Dates.DateTime)
 end
 
 function disable_makie_cam_keyboard!(cam::Makie.Camera3D)
-    println("disabling Makie keyboard camera control!")
+    # println("disabling Makie keyboard camera control!")
     exclude = [:reposition_button, :reset, :rotation_button, :translation_button]
     for item in keys(cam.controls)
         if !(item in exclude)
@@ -114,8 +114,8 @@ function show()
     target_config_table = tabulate(target_configs)
     
     pointbufflen = 1000
-    obbufflen = 10^4
-    start_time = Dates.DateTime(2026,3,20,1,2,3)
+    obbufflen = 2*10^4
+    start_time = sim.start_time
     pos_ECI = Observable([Point3d(NaN) for k in 1:pointbufflen])
     ob_time = Observable([start_time + Dates.Second(k) for k in 1:obbufflen])
     batt = Observable([NaN for k in 1:obbufflen])
@@ -543,6 +543,218 @@ function show()
             if typeof(e) <: InterruptException
                 println("exiting...")
                 close(sock)
+                break
+            else
+                rethrow(e)
+                flush(sock)
+                continue
+            end
+        end
+    end
+end
+
+function stringify(something::AbstractArray)::String
+    res = ""
+    sep = ""
+    for (k, el) in enumerate(something)
+        if k > 1
+            sep = ", "
+        else
+            sep = ""
+        end
+        res = res * sep * String(Printf.@sprintf "%.4e" something[k])
+    end
+    return res
+end
+
+mutable struct CSVLine
+    utc::Dates.DateTime
+    met::Float64
+    t::Float64
+    count::UInt64
+    pos::Vec3d
+    vel::Vec3d
+    att::Mat3d
+    batt::Float64
+    stor::Float64
+    mode::IDType
+    target::IDType
+end
+function CSVLine()
+    return CSVLine(Dates.DateTime(0), 0.0,0.0, 0x0, Vec3d(NaN), Vec3d(NaN), Mat3d(fill(NaN, (3,3))), 0.0, 0.0, typemax(IDType), typemin(IDType))
+end
+function update!(line::CSVLine, sat::SatelliteState)
+    line.met = sat.elapsed_time
+    line.pos = sat.position_ECI
+    line.vel = sat.velocity_ECI
+    line.att = sat.attitude_ECI_Body
+    line.batt = sat.battery_level
+    line.stor = sat.storage_level
+    line.mode = sat.mode
+    line.target = sat.target
+end
+function iscomplete(line::CSVLine) 
+    emptyl = CSVLine()
+    if line.utc != emptyl.utc && 
+        line.met != emptyl.met &&
+        line.t != emptyl.t &&
+        line.count != emptyl.count &&
+        any(line.pos .!= emptyl.pos) &&
+        any(line.vel .!= emptyl.vel) &&
+        any(line.att .!= emptyl.att) &&
+        line.batt != emptyl.batt &&
+        line.stor != emptyl.stor &&
+        line.mode != emptyl.mode &&
+        line.target != emptyl.target
+        return true
+    else
+        return false
+    end
+end
+
+function stringify(line::CSVLine)
+    out = "\n"
+    out *= Dates.format(line.utc, "dd u YYYY HH:MM:SS.sss")
+    out *= ", " * String(Printf.@sprintf "%.4e" line.met)
+    out *= ", " * String(Printf.@sprintf "%.4e" line.t)
+    out *= ", " * String(Printf.@sprintf "%u" line.count)
+    out *= ", " * stringify(line.pos)
+    out *= ", " * stringify(line.vel)
+    out *= ", " * stringify(line.att)
+    out *= ", " * String(Printf.@sprintf "%.4e" line.batt)
+    out *= ", " * String(Printf.@sprintf "%.4e" line.stor)
+    out *= ", " * String(Printf.@sprintf "%u" line.mode)
+    out *= ", " * String(Printf.@sprintf "%u" line.target)
+    return out
+end
+
+function write_csv(outfile::AbstractString)
+    # server = Sockets.listen(unixsockname)
+    sock = Sockets.UDPSocket()
+    # bind(sock, unixsockname)
+    sock = Sockets.connect(unixsockname)
+
+    outf = open(outfile, "a")
+    
+    sim, sat, sat_config, targets, target_configs, modes, mode_table = handle_new_config(joinpath("config","example.jsonc"))
+    
+    mode_table = tabulate(modes)
+    target_state_table = tabulate(targets)
+    target_config_table = tabulate(target_configs)
+    
+    start_time = sim.start_time
+    # met = Observable(Float64(0.0))
+    # met_label = lift(met) do l
+    #     return format_clock(l, start_time)
+    # end
+    
+    
+    # println("server: ", server)
+    # sock = Sockets.accept(server)
+    println("socket: ", sock)
+    
+    nrate = 100_000
+    secondly_debug = 2.0
+    bytecount = 0
+    last_met = 0.0
+    lastratetime = time()
+    
+    packlen = length(packetize(SatelliteState(), 0x0000, UInt64(0)))
+    packlen = 1
+    headbuff = zeros(UInt8, 8)
+    buff = zeros(UInt8, packlen)
+    
+    play = Ref(UInt8(0x01))
+    sleep = Ref(UInt8(0xff))
+    last_proj = Ref(UInt8(0x00))
+    sleepstep = 8
+    
+    # handle file drag/drop
+    
+    # handle keyboard input:
+    # on(events(ax).keyboardbutton) do event
+    #     if event.action == Keyboard.press || event.action == Keyboard.repeat
+    #         if event.key == Keyboard.space
+    #             if play[] == 0x01
+    #                 play[] = 0x00
+    #             elseif play[] == 0x00
+    #                 play[] = 0x01
+    #             else
+    #                 println("oh no!!!")
+    #             end
+    #             writeval = packetize(PlayMessage(UInt8(play[])), 0x0000, UInt64(1))
+    #             write(sock, writeval)
+    #             println("> sent command ", writeval, " to server")
+    #         end
+    #     end
+    # end
+
+    header = "t [UTC], t [MET], t [s], counter [], pos_ECI_x [m], pos_ECI_y [m], pos_ECI_z [m], vel_ECI_x [m], vel_ECI_y [m], vel_ECI_z [m], att_ECI_Body_11 [], attitude_ECI_Body_12 [], attitude_ECI_Body_13 [], attitude_ECI_Body_21 [], attitude_ECI_Body_22 [], attitude_ECI_Body_23 [], attitude_ECI_Body_31 [], attitude_ECI_Body_32 [], attitude_ECI_Body_33 [], battery [J], data storage [b], mode, target"
+    last_count = 0
+
+    write(outf, header)
+
+    this_line = CSVLine()
+
+    met = 0.0
+    while true
+        try
+            
+            nbhead = readbytes!(sock, headbuff)
+            type, flags, len = behead(headbuff)
+            
+            buff = zeros(UInt8, len)
+            nbdata = readbytes!(sock, buff)
+            this_count, simdata = des(type, buff)
+            
+            if typeof(simdata) === EarthState
+                # q_ECEF_ECI[] = dcm_to_quat(simdata.attitude_ECI_ECEF)
+                # notify(q_ECEF_ECI)
+                # GLMakie.rotate!(earth_mesh, q_ECEF_ECI[])
+                
+            elseif typeof(simdata) === SunState
+                target_state_table[simdata.id] = simdata
+                
+            elseif typeof(simdata) === GroundState
+                # gs_dict[simdata.id] = simdata
+                target_state_table[simdata.id] = simdata
+                # met[] = simdata.elapsed_time
+                
+            elseif typeof(simdata) === SatelliteState
+                # update mission clock
+                update!(this_line, simdata)
+                met = simdata.elapsed_time
+                this_line.count = this_count
+                this_line.t = simdata.elapsed_time
+                this_line.utc = start_time + Dates.Millisecond(1000*simdata.elapsed_time)
+            else
+                println("unknown message type")
+            end
+
+            # handle writing the CSV
+            if iscomplete(this_line)
+                # write the line to the file
+                write(outf, stringify(this_line))
+                # clear this_line
+                this_line = CSVLine()
+            end
+            
+            bytecount += len + 8
+            
+            if time() - lastratetime > secondly_debug
+                Printf.@printf "\nstep, MET: %u, %.2f days\n" this_count met/3600/24
+                Printf.@printf "rate:      %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
+                Printf.@printf "time gain: %u:1 \n" Int64(round((met - last_met)/(time() - lastratetime)))
+                Printf.@printf "file size: %u MB\n" Int64(round(stat(outfile).size/1e6))
+                last_met = met
+                lastratetime = time()
+                bytecount = 0
+            end
+        catch e
+            if typeof(e) <: InterruptException
+                println("exiting...")
+                close(sock)
+                close(outf)
                 break
             else
                 rethrow(e)

@@ -5,6 +5,9 @@ authors = ["Thanasi Pantazides <thanasipantazides@gmail.com>"]
 
 [deps]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
@@ -24,6 +27,9 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 Aqua = "0.8.14"
+CSV = "0.10.16"
+CairoMakie = "0.15.10"
+DataFrames = "1.8.2"
 Dates = "1.11.0"
 FileIO = "1.18.0"
 GeometryBasics = "0.5.10"

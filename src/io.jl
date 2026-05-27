@@ -214,9 +214,6 @@ end
 function load_config(d::Dict{String, Any})
     id_registry = Set{IDType}(23)
     
-    # todo: set this from config
-    start_time = Dates.DateTime(2026,3,20,1,2,3)
-    
     siminittime = d["simulation"]["initial"]["time"]
     sim = SimConfig(
         next_id!(id_registry),
