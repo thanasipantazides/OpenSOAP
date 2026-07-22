@@ -41,6 +41,21 @@ function euler_rigid_dynamics(w_Body::Vec3d, pert_M_Body::Vec3d, dt::Float64, pa
     return dw
 end
 
+function euler_rigid_dynamics(angular_velocity_ECI_Body::Vec3d, control_M_Body::Vec3d, pert_M_Body::Vec3d, dt::Float64, sat_config::SatelliteConfig)::Vec3d
+    dw = sat_config.inertia_inv_Body*(pert_M_Body + control_M_Body - cross(angular_velocity_ECI_Body, sat_config.inertia_Body*angular_velocity_ECI_Body))
+    return dw
+end
+
+function step_attitude!(x::SatelliteState, control_M_Body::Vec3d, pert_M_Body::Vec3d, dt::Float64, sat_config::SatelliteConfig, params)
+    k1 = euler_rigid_dynamics(x.angular_velocity_ECI_Body, control_M_Body, pert_M_Body, dt, sat_config)
+    k2 = euler_rigid_dynamics(x.angular_velocity_ECI_Body .+ dt/2*k1, control_M_Body, pert_M_Body, dt, sat_config)
+    k3 = euler_rigid_dynamics(x.angular_velocity_ECI_Body .+ dt/2*k2, control_M_Body, pert_M_Body, dt, sat_config)
+    k4 = euler_rigid_dynamics(x.angular_velocity_ECI_Body .+ dt*k3, control_M_Body, pert_M_Body, dt, sat_config)
+
+    x.angular_velocity_ECI_Body = x.angular_velocity_ECI_Body + dt/6*(k1 + 2*(k2 + k3) + k4)
+    x.attitude_ECI_Body = x.attitude_ECI_Body*exp(cross(x.angular_velocity_ECI_Body)*dt)
+end
+
 function step_attitude(x::AttitudeState, dt::Float64, params)::AttitudeState
     # RK4
     k1 = euler_rigid_dynamics(x, dt, params)
@@ -79,7 +94,7 @@ function step_satellite(x::SatelliteState, dt::Float64, params)::SatelliteState
     newx.elapsed_time = x.elapsed_time + dt
     
     return newx
-end 
+end
 
 function step!(earth::EarthState, sat::SatelliteState, dt::Float64, t::Dates.DateTime, config::TargetConfig, params)
     earth.elapsed_time += dt
@@ -132,7 +147,7 @@ function step_targets(targets::Vector{GroundState}, x::SatelliteState, dt::Float
     return targets
 end
 
-function clamp_attitude_align!(sat::SatelliteState, mode::ModeConfig, dt::Float64, target::AbstractTarget, sat_config::SatelliteConfig, params; secondary::Vec3d=Vec3d(0.0,0.0,1.0))
+function clamp_attitude_align!(sat::SatelliteState, mode::ModeConfig, dt::Float64, t::Dates.DateTime, target::AbstractTarget, sat_config::SatelliteConfig, params; secondary::Vec3d=Vec3d(0.0,0.0,1.0))
     
     # target = targets[findfirst(t -> t.id == sat.target, targets)]
     from_Body = normalize(sat.attitude_ECI_Body*mode.direction_Body)
@@ -145,16 +160,44 @@ function clamp_attitude_align!(sat::SatelliteState, mode::ModeConfig, dt::Float6
         return
     end
     C_diff = r_min_arc(to_ECI, from_Body)
-    C_next = sat.attitude_ECI_Body'*C_diff
-    
-    # to clamp immediately to the target:
-    # sat.attitude_ECI_Body = C_next
-    
-    # to slew at a fixed rate to the target:
-    rot_axis_Body = normalize(uncross(log(C_diff)))
-    sat.angular_velocity_ECI_Body = sat_config.angular_rate_max*dt*rot_axis_Body
-    C_push = exp(cross(sat.angular_velocity_ECI_Body))
-    sat.attitude_ECI_Body = sat.attitude_ECI_Body'*C_push
+
+    inner_attitude_dynamic!(sat, C_diff, dt, t, sat_config, params; style=:pd)
+end
+
+function inner_attitude_dynamic!(sat::SatelliteState, C_err::AbstractMatrix, dt::Float64, t::Dates.DateTime, sat_config::SatelliteConfig, params; style=:clamp)
+
+    # snap instantly to target attitude
+    if style == :clamp
+        C_next = sat.attitude_ECI_Body'*C_err
+        sat.attitude_ECI_Body = C_next
+        sat.angular_velocity_ECI_Body = Vec3d(0.0)
+
+        # spherical linear interpolation of attitude
+    elseif style == :slerp
+        rot_axis_Body = normalize(uncross(log(C_err)))
+        sat.angular_velocity_ECI_Body = sat_config.angular_rate_max*dt*rot_axis_Body
+        C_push = exp(cross(sat.angular_velocity_ECI_Body))
+        sat.attitude_ECI_Body = sat.attitude_ECI_Body'*C_push
+
+        # proportional-derivative control
+    elseif style == :pd
+        # todo: move these to params or SatelliteConfig. 
+        kp = 1e-3
+        kd = 0.01
+        # presume that we want zero angular velocity
+        angular_velocity_ECI_Body_goal = Vec3d(0.0)
+        angular_velocity_err = angular_velocity_ECI_Body_goal - sat.angular_velocity_ECI_Body
+        u_B = -kp*uncross(log(C_err)) - kd*(angular_velocity_err)
+        println(norm(kp*uncross(log(C_err)) - kd*angular_velocity_err))
+        # u_B = Vec3d(0.0)
+
+        step_attitude!(sat, -u_B, Vec3d(0.0), dt, sat_config, params)
+
+        # println(" > ", norm(sat.angular_velocity_ECI_Body))
+        # println(" > ", residualSO3(sat.attitude_ECI_Body))
+    else
+        throw(ArgumentError("invalid style value "*style))
+    end
 end
 
 # todo: change targets::Vector{GroundState} to targets::Vector{AbstractTarget} so it includes SunTarget.
@@ -184,7 +227,7 @@ function set_mode!(sat::SatelliteState, targets::Vector{AbstractTarget}, target_
         targetchoice = targets[findfirst(t -> t != 0, visibility .* mode_table[:,mode_k])]
         sat.target = targetchoice.id
         
-        clamp_attitude_align!(sat, modechoice, dt, targetchoice, sat_config, params)
+        clamp_attitude_align!(sat, modechoice, dt, t, targetchoice, sat_config, params)
     end
     set_power_data!(sat, targets, target_configs, dt, t, modes, targetchoice, sat_config, params)
 end
