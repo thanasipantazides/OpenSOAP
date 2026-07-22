@@ -81,15 +81,7 @@ end
 # -------------------------------------------------------------------
 # Cross product and quaternion utilities
 # -------------------------------------------------------------------
-function LinearAlgebra.cross(x::Vector{<:Number})::Matrix{<:Number}
-    return [
-        0 -x[3] x[2];
-        x[3] 0 -x[1];
-        -x[2] x[1] 0
-    ]
-end
-
-function LinearAlgebra.cross(x::SVector{3,Float64})::SMatrix{3,3,Float64}
+function LinearAlgebra.cross(x::AbstractVector)
     return [
         0 -x[3] x[2];
         x[3] 0 -x[1];
@@ -152,6 +144,35 @@ function r_from_quat(q::Vector{Float64})
     qr = q[4]
     return (qr^2 - qq'*qq)*I + 2*qq*qq' + 2*qr*cross(qq)
 end
+    
+function isSO3(X::AbstractMatrix)::Bool
+    if (det(X) - 1 < so3tol) && (abs(sum(X'*X .- diagm([1,1,1]))) < so3tol)
+        return true
+    end
+    return false
+end
+
+function residualSO3(X::AbstractMatrix)
+    return (det(X) - 1) + (sum(X'*X .- diagm([1,1,1])))
+end
+
+function residualso3(X::AbstractMatrix)
+    return sum(X' + X) 
+end
+
+function isso3(X::AbstractMatrix)::Bool
+    if abs(sum(X' + X)) < so3tol
+        return true
+    end
+    return false
+end
+
+function projSO3(X::AbstractMatrix)
+    (U, S, V) = svd(X)
+
+    C_BA = U*diagm([1, 1, det(U)*det(V)])*V'
+    return C_BA
+end
 
 @doc raw"""
     uncross(X)
@@ -163,7 +184,7 @@ This is useful, e.g., when working in the Lie group ``\mathfrak{so}(3)``, the ta
 # -------------------------------------------------------------------
 # Uncross and rotation helpers
 # -------------------------------------------------------------------
-function uncross(X::Matrix{<:Number})::Vector{<:Number}
+function uncross(X::AbstractMatrix)
     u = [-X[2, 3]; X[1, 3]; -X[1, 2]]
     if all(u .== 0)
         return zeros(3)
@@ -204,8 +225,8 @@ end
 
 function r_euler2(ang::Real)::Matrix{<:Real}
     return [cos(ang) 0 sin(ang);
-            -sin(ang) 0 cos(ang);
-            0 1 0]
+            0 1 0;
+            -sin(ang) 0 cos(ang)]
 end
 
 function r_euler1(ang::Real)::Matrix{<:Real}
@@ -258,10 +279,7 @@ function wahba(A::AbstractMatrix{<:Real}, B::AbstractMatrix{<:Real}; weights=mis
         D += weights[k] * (B[:,k] * A[:,k]')
     end
 
-    (U, S, V) = svd(D)
-
-    C_BA = U*diagm([1, 1, det(U)*det(V)])*V'
-    return C_BA
+    return projSO3(D)
 end
 
 # -------------------------------------------------------------------
@@ -317,4 +335,8 @@ function interp(s0::State{<:Real}, sf::State{<:Real}, n::Int)
     end
     # push!(s, sf)
     return s
+end
+
+function displace_orbit_position(state::State{<:Real}, state_hist::Vector{State{<:Real}}, dist::Real; window=100)
+    # mean_ovec = 
 end

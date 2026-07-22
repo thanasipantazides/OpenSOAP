@@ -93,38 +93,54 @@ struct Polyhedron{T}
     end
 end
 
-function project(u::Vector{<:Real}, p::Polyhedron{<:Real})
+function project(u::Vector{<:Real}, p::Polyhedron{<:Real}; model=JuMP.Model(Ipopt.Optimizer), mode=:vector)
     # condition the input based on the size of the Polyhedron
     Lmin = min(p.distances...)
     Lmax = max(p.distances...)
     v = u/norm(u)*Lmin
     eps = Lmin/1000
 
-    model = JuMP.Model(MadNLP.Optimizer)
+    ans = nothing
+    if mode == :scalar
+        ans = project_scalar(v, p, model)
+    elseif mode == :vector
+        ans = project_vector(v, p, model)
+    end
+    return ans
+end
+
+function project_scalar(v::Vector{<:Real}, p::Polyhedron{<:Real}, model)
     JuMP.set_silent(model)
-    # JuMP.set_attribute(model, "algorithm", :LD_MMA)
-    # scalar solution in gamma:
-    JuMP.@variable(model, gamma >= eps)
-    JuMP.@constraint(model, gamma*p.normals*v <= p.distances)
-    JuMP.@objective(model, Max, gamma^2)
-    
-    # linear solution in w:
-    # JuMP.@variable(model, w[1:3] .>= eps)
-    # JuMP.@constraint(model, p.normals*w <= p.distances)
-    # JuMP.@objective(model, Max, v'*w)
 
-    # linear solution in w (SDP):
-    # JuMP.@variable(model, w[1:3])
-    # JuMP.@constraint(model, p.normals*w <= p.distances)
-    # JuMP.@constraint(model, (w[1]*v[1] + w[2]*v[2] + w[3]*v[3])/sqrt(w[1]^2 + w[2]^2 + w[3]^2)/norm(v) == 1.0)
-    # JuMP.@objective(model, Max, w[1]^2 + w[2]^2 + w[3]^2)
-
+    # linear solution in gamma:
+    JuMP.@variable(model, gamma >= 0)
+    JuMP.@constraint(model, gamma*p.normals*v .<= p.distances)
+    JuMP.@objective(model, Max, gamma)
     JuMP.optimize!(model)
+
     if JuMP.is_solved_and_feasible(model)
         return JuMP.value.(gamma)*v
         # return JuMP.value.(w)
     else
-        error("failed to project point ", u, " onto polyhedron!")
+        error("failed to project point ", u, " onto polyhedron by scalar!")
+    end
+end
+
+function project_vector(v::Vector{<:Real}, p::Polyhedron{<:Real}, model)
+    JuMP.set_silent(model)
+    # println(p.normals)
+    # linear solution in gamma:
+    JuMP.@variable(model, w[1:3] .>= 0)
+    JuMP.@constraint(model, p.normals*w .<= p.distances)
+    JuMP.@objective(model, Max, v'*w)
+    JuMP.optimize!(model)
+    # println("hello!!\n")
+
+    if JuMP.is_solved_and_feasible(model)
+        return JuMP.value.(w)
+        # return JuMP.value.(w)
+    else
+        error("failed to project point ", u, " onto polyhedron by vector!")
     end
 end
 

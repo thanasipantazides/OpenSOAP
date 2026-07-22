@@ -59,21 +59,46 @@ function load_spacecraft(file::String)
     ### Go in and add dict values from impax.yaml file. Try to parse file to see if errors occur
     ###############################################
     # Build Dict{Modes, Float64} from YAML "consumption.modes"
-modes_dict = Dict{Modes, Float64}()
-if haskey(bus_data["power"], "consumption") && haskey(bus_data["power"]["consumption"], "modes")
-    for (k, v) in bus_data["power"]["consumption"]["modes"]
-        # Convert YAML string key ("science") to Modes.science!!! :)
-        mode_enum = Modes(Symbol(k))
-        modes_dict[mode_enum] = Float64(v)
+    mode_table = Dict{Modes, ModeElement}()
+    modekey = "modes"
+    if haskey(bus_data, modekey)
+        for (k, v) in bus_data[modekey]
+            
+            k_enum = idle::Modes
+            try
+                k_enum = eval(Symbol(k))
+            catch e
+                println("Found mode name "*k*" not in Modes enum")
+                continue
+            end
+            
+            dir = nothing
+            if haskey(v, "direction")
+                dir = bus_data[modekey][k]["direction"] / norm(bus_data[modekey][k]["direction"])
+            end
+            
+            mode_table[k_enum] = ModeElement(
+                bus_data[modekey][k]["power_consumption"],
+                bus_data[modekey][k]["data_production"],
+                dir
+            )
+        end
     end
-end
+    
+    # if haskey(bus_data["power"], "consumption") && haskey(bus_data["power"]["consumption"], "modes")
+    #     for (k, v) in bus_data["power"]["consumption"]["modes"]
+    #         # Convert YAML string key ("science") to Modes.science!!! :)
+    #         mode_enum = Modes(Symbol(k))
+    #         modes_dict[mode_enum] = Float64(v)
+    #     end
+    # end
 
-power_data = PowerProperties(
-    bus_data["power"]["capacity"],
-    bus_data["power"]["base_consumption"],
-    panels,
-    modes_dict
-)
+    power_data = PowerProperties(
+        bus_data["power"]["capacity"],
+        bus_data["power"]["base_consumption"],
+        panels
+        # modes_dict
+    )
 
     data_data = DataProperties(
         bus_data["data"]["capacity"],
@@ -105,7 +130,8 @@ power_data = PowerProperties(
         power_data,
         data_data,
         mass_data,
-        attitude_data
+        attitude_data,
+        mode_table
     )
     return spacecraft_data
 end
@@ -189,8 +215,4 @@ function load_bfield(file::String, type::Type)
             return nothing
         end
     end
-end
-
-function save_state(times::Vector{<:Real}, states::Vector{State{T}}) where T<:Real
-    
 end

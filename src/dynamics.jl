@@ -3,7 +3,8 @@ import SatelliteToolboxBase, SatelliteToolboxTransformations
 using StaticArrays
 using ProgressMeter
 
-import Base: +, *
+import Base: +, *, write
+import Printf, Dates
 
 """
     integrate_system(dynamics, initial, tspan, dt, params)
@@ -429,7 +430,7 @@ function simulate_conop!(sim::LEOSimulation, sim_config::Union{Nothing,Dict{Stri
 
     progbar = Progress(n_orbit, desc="Running target selection...\t")
     while k < length(times)
-        update!(progbar, k)
+        ProgressMeter.update!(progbar, k)
         diffmask = targets[:, k] .> targets[:, k-1]
 
         if any(targets[t_gs, k] .!= 0)     # any groundstation is visible
@@ -764,13 +765,6 @@ function assign_attitude_reference!(sim::LEOSimulation,
     
     track_modes = [downlink::Modes, science::Modes, charging::Modes]
     
-    @warn "using hardcoded body vectors for slew! Replace later."
-    dir_for_mode_B = Dict(
-        downlink::Modes=>[0.0;0.0;1.0],
-        science::Modes=>[0.0;0.0;1.0],
-        charging::Modes=>[0.0;0.0;-1.0],
-    )
-    
     @showprogress desc = "Assigning reference knot points...\t" for k in eachindex(times)
         if k == length(times)
             break
@@ -833,22 +827,21 @@ function assign_attitude_reference!(sim::LEOSimulation,
         # for every pointing, just interpolate between first and last attitude. 
         # for downlink and science, min arc slew between timesteps. Should be able to do that everywhere, actually.
         if states[k].mode == pointing::Modes
-            C_BInext = I(3)
+            C_IBnext = I(3)
             k_next = findnext(flat_modes .!= flat_modes[k], k)
             if isnothing(k_next) # sim ends during this maneuver
                 @warn "odd, finishing sim while pointing."
-                C_BInext = states[k - 1].attitude
+                C_IBnext = states[k-1].attitude
                 k += 1
                 continue
             end
             ref_norm = reference_directions[:,k_next] / norm(reference_directions[:,k_next])
             # C_BInext = states[k-1].attitude*r_min_arc(states[k-1].attitude*dir_for_mode_B[states[k_next].mode], ref_norm)
             # C_BInext = r_min_arc(states[k-1].attitude*dir_for_mode_B[states[k_next].mode], ref_norm)*states[k-1].attitude
-            C_BInext = states[k-1].attitude*r_min_arc(dir_for_mode_B[states[k_next].mode], states[k-1].attitude'*ref_norm)
+            # C_BInext = states[k-1].attitude*r_min_arc(dir_for_mode_B[states[k_next].mode], states[k-1].attitude'*ref_norm)
+            C_IBnext = states[k-1].attitude*r_min_arc(sim.mission.spacecraft.modes[states[k_next].mode].direction, states[k-1].attitude'*ref_norm)
             
-            seq = rotinterp(states[k-1].attitude, C_BInext, k_next - k)
-            # todo: this is an apparent bug in rotinterp: result is relative to left arg, 
-            # i.e. non-identity initial attitudes will be interpolated relative to the first attitude.
+            seq = rotinterp(states[k-1].attitude, C_IBnext, k_next - k)
             for j in k:k_next - 1
                 states[j].attitude = seq[:,:,j - k + 1]
                 # states[j].attitude = states[k-1].attitude*seq[:,:,j - k + 1]
@@ -857,13 +850,20 @@ function assign_attitude_reference!(sim::LEOSimulation,
             k = k_next
         elseif states[k].mode in track_modes
             ref_norm = reference_directions[:,k] / norm(reference_directions[:,k])
-            # states[k].attitude = r_min_arc(states[k-1].attitude*dir_for_mode_B[states[k].mode], ref_norm)
-            # states[k].attitude = states[k-1].attitude*r_min_arc(states[k-1].attitude'*ref_norm, dir_for_mode_B[states[k].mode])'
-            states[k].attitude = states[k-1].attitude*r_min_arc(dir_for_mode_B[states[k].mode], states[k-1].attitude'*ref_norm)
+            # states[k].attitude = states[k-1].attitude*r_min_arc(dir_for_mode_B[states[k].mode], states[k-1].attitude'*ref_norm)
+            C_BIfwd = r_min_arc(sim.mission.spacecraft.modes[states[k].mode].direction, states[k-1].attitude'*ref_norm)
+            states[k].attitude = states[k-1].attitude*C_BIfwd
             k += 1
         else
             states[k].attitude = states[k-1].attitude
             k += 1
+        end
+        
+        if !isSO3(states[k-1].attitude) # rectify last attitude if needed.
+            # note: this does not catch every attitude inside slewing, i.e. pointing::Modes
+            #   pointing::Modes are covered by the inner loop in the first if above. If maneuvers
+            #   are very long compared to timestep, this may become an issue.
+            states[k-1].attitude = projSO3(states[k-1].attitude)
         end
     end
 end
@@ -873,7 +873,9 @@ function simulate_power_data!(sim::LEOSimulation,
             times::Vector{S}, 
             states::Vector{State{S}},
             targets::Matrix{S}, 
-            target_choice::Vector{Int64}
+            target_choice::Vector{Int64},
+            reference_directions::Matrix{S};
+            aggregate_downlink::Vector{<:Real}=zeros(length(times))
     ) where S<:Real
 
     for k in eachindex(times)
@@ -881,27 +883,64 @@ function simulate_power_data!(sim::LEOSimulation,
             continue 
         end
         
+        # assume visibility is taken care of when producing reference?
+        #   for now, yes, but in general that's probably not wise.
+        power_consumption = sim.mission.spacecraft.modes[states[k].mode].power_consumption
+        
+        sun = sim.mission.targets[findfirst(typeof.(sim.mission.targets) .== SunTarget)]
+        power_production = 0
+        if visibility(sun, times[k], states[k].position)
+            sundir = position_eci(sun, times[k]) - states[k].position
+            sundir = sundir / norm(sundir)
+            for panel in sim.mission.spacecraft.power.solarpanels
+                suncos = sundir'*states[k].attitude*panel.normal
+                if suncos > 0
+                    power_production += suncos*panel.area*panel.efficiency*sim.earth.irradiance
+                end
+            end
+        end
+        # attitude is C_IB
+        
+        data_production = sim.mission.spacecraft.modes[states[k].mode].data_production
+        
+        data_consumption = 0
+        if target_choice[k] in eachindex(sim.mission.targets)
+            this_target = sim.mission.targets[target_choice[k]]
+            if visibility(this_target, times[k], states[k].position) && typeof(this_target) == GroundTarget && states[k].mode == downlink::Modes
+                gsdir = position_eci(this_target, times[k]) - states[k].position
+                gsdir = gsdir / norm(gsdir)
+                # WAIT: this is not necessarily the antenna direction. That direction does not show up in config. Need to correct that.
+                gscos = gsdir'*states[k].attitude*sim.mission.spacecraft.modes[states[k].mode].direction
+                if gscos > 0 && rand() > 0.0638*2
+                    data_consumption = sim.mission.spacecraft.data.transmit
+                    aggregate_downlink[k] = aggregate_downlink[k-1] + data_consumption
+                end
+            end
+        end
         # check modal power consumption, data production.
         # check visibility (eclipse + viewing) of sun for power production
         # check visibility (eclipse + viewing) of groundstations for data consumption
         #   add arg to record data sent to each groundstation
         
-        
+        states[k].battery = clamp(states[k - 1].battery + (times[k] - times[k - 1])*(power_production - power_consumption), 0, sim.mission.spacecraft.power.capacity)
+        states[k].storage = clamp(states[k - 1].storage + (times[k] - times[k - 1])*(data_production - data_consumption), 0, sim.mission.spacecraft.data.capacity)
     end
 end
 
-function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}})
+function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,String}}; logfile::String="")
 
     times = Vector{Float64}(sim.tspan[1]:sim.dt:sim.tspan[2])
-    n_orbit = length(times)
+    nt = length(times)
 
     # allocate:
-    target_visibilities = Matrix{Float64}(undef, length(sim.mission.targets), n_orbit)
-    target_choice = zeros(Int64, n_orbit) .- 4
-    reference_directions = Matrix{Float64}(undef, 3, n_orbit) # pointing direction at each time
-    reference_attitude = Array{Float64,3}(undef, 3, 3, n_orbit) # attitude reference at each time
+    target_visibilities = Matrix{Float64}(undef, length(sim.mission.targets), nt)
+    target_choice = zeros(Int64, nt) .- 4
+    reference_directions = Matrix{Float64}(undef, 3, nt) # pointing direction at each time
+    reference_attitude = Array{Float64,3}(undef, 3, 3, nt) # attitude reference at each time
     fine_reference_attitude = Dict{Int64, Tuple{Vector{Float64}, Vector{State{Float64}}}}()
-    states = Vector{State{Float64}}(undef, n_orbit)
+    states = Vector{State{Float64}}(undef, nt)
+    aggregate_downlink = Vector{Float64}(undef, nt)
+    
     # initial condition:
     states[1] = State{Float64}(sim)
     
@@ -915,27 +954,65 @@ function simulate(sim::LEOSimulation, sim_config::Union{Nothing,Dict{String,Stri
     # rectify attitude reference with pointings
     assign_attitude_reference!(sim, sim_config, times, states, target_visibilities, target_choice, reference_directions, fine_reference_attitude)
 
-    simulate_power_data!(sim, sim_config, times, states, target_visibilities, target_choice)
+    simulate_power_data!(sim, sim_config, times, states, target_visibilities, target_choice, reference_directions; aggregate_downlink=aggregate_downlink)
     # fudging this for later usage:
-    # [state.attitude = diagm([1.0; 1.0; 1.0]) for state in states]
-
-    # run conop logic for targeting
-    #   note: this is a priori---pointing logic can be interrupted by tumbling or low power triggers
-    # flow:
-    #   1. visibility masks and position -> mode
-    #   2. mode -> target
-    #   3. target and last target and -> attitude reference
-    #   4. (justification -> attitude reference timing)
-    #
+    
     # attitude control
     #   along a fine grid, with steps defined by the agilitoid
     #   heuristic_control_stepsize = 0.22/sqrt(norm(Iinv*m_max))
     #   before computing, warn that "performing n maneuvers, each takes ~150 seconds to compute"
     #   ... and show progress bar (`using ProgressMeter`)
-    #
-    # power, data, flows
-    #
-    # return state trajectory, time, target visibility mask
-    #
-    return times, states, target_visibilities, target_choice, reference_directions, fine_reference_attitude
+    
+    if logfile != ""
+        log(logfile, times, states, target_visibilities, target_choice, reference_directions, fine_reference_attitude, aggregate_downlink, sim)
+    end
+    
+    return times, states, target_visibilities, target_choice, reference_directions, fine_reference_attitude, aggregate_downlink
+end
+
+
+function log(file::String, times, states, target_visibilities, target_choice, reference_directions, fine_reference_attitude, aggregate_downlink, sim)
+    println("logging result to "*file)
+    header="t_UTC,mode,r_1I,r_2I,r_3I,lat,lon,alt,v_1I,v_2I,v_3I,w_1IB,w_2IB,w_3IB,C_11IB,C_21IB,C_31IB,C_12IB,C_22IB,C_32IB,C_13IB,C_23IB,C_33IB,battery,storage"
+    io = IOBuffer()
+    Base.write(io, header)
+    floatprec = 12 # number of digits 
+    # fspec = Printf.format"%1."*Printf.@sprintf("%2u", floatprec)*"e"
+    fspec = Printf.Format("%1.12e")
+    for k in eachindex(times)
+        pos_lla = position_lla(Vector(states[k].position), times[k], sim.mission.targets[1].iers_eops)
+        t_UTC_d = SatelliteToolboxBase.jd_to_date(Dates.DateTime, times[k]/24/3600)
+        t_UTC = Dates.format(t_UTC_d, dateformat"yyyy-mm-ddTHH:MM:SS.sss")
+        Base.write(io, "\n"*t_UTC)
+        Base.write(io, ","*Printf.@sprintf("%2u", Int(states[k].mode)))
+        Base.write(io, ","*Printf.format(fspec, states[k].position[1]))
+        Base.write(io, ","*Printf.format(fspec, states[k].position[2]))
+        Base.write(io, ","*Printf.format(fspec, states[k].position[3]))
+        Base.write(io, ","*Printf.format(fspec, pos_lla[1]))
+        Base.write(io, ","*Printf.format(fspec, pos_lla[2]))
+        Base.write(io, ","*Printf.format(fspec, pos_lla[3]))
+        Base.write(io, ","*Printf.format(fspec, states[k].velocity[1]))
+        Base.write(io, ","*Printf.format(fspec, states[k].velocity[2]))
+        Base.write(io, ","*Printf.format(fspec, states[k].velocity[3]))
+        Base.write(io, ","*Printf.format(fspec, states[k].angular_velocity[1]))
+        Base.write(io, ","*Printf.format(fspec, states[k].angular_velocity[2]))
+        Base.write(io, ","*Printf.format(fspec, states[k].angular_velocity[3]))
+        Base.write(io, ","*Printf.format(fspec, states[k].attitude[1]))
+        Base.write(io, ","*Printf.format(fspec, states[k].attitude[2]))
+        Base.write(io, ","*Printf.format(fspec, states[k].attitude[3]))
+        Base.write(io, ","*Printf.format(fspec, states[k].attitude[4]))
+        Base.write(io, ","*Printf.format(fspec, states[k].attitude[5]))
+        Base.write(io, ","*Printf.format(fspec, states[k].attitude[6]))
+        Base.write(io, ","*Printf.format(fspec, states[k].attitude[7]))
+        Base.write(io, ","*Printf.format(fspec, states[k].attitude[8]))
+        Base.write(io, ","*Printf.format(fspec, states[k].attitude[9]))
+        Base.write(io, ","*Printf.format(fspec, states[k].battery))
+        Base.write(io, ","*Printf.format(fspec, states[k].storage))
+    end
+    
+    content = String(take!(io))
+    
+    log = open(file, "w")
+    Base.write(log, content)
+    close(log)
 end

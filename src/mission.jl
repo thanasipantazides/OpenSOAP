@@ -27,7 +27,7 @@ end
     capacity::T
     base_consumption::T
     solarpanels::Vector{SolarPanel}
-    consumption::Dict{Modes, Float64}   # NEW!!!
+    # consumption::Dict{Modes, Float64}   # NEW!!!
 end
 
 
@@ -87,11 +87,10 @@ end
     wheels::ReactionWheelProperties
 end
 
-@kwdef struct Mode
-    name::String
-    entry::Function
-    power::Real
-    data::Real
+@kwdef struct ModeElement
+    power_consumption::Real
+    data_production::Real
+    direction::Union{Nothing, Vector{<:Real}}
 end
 
 @kwdef struct SpacecraftProperties
@@ -100,6 +99,7 @@ end
     data::DataProperties
     mass::MassProperties
     attitude::AttitudeProperties
+    modes::Dict{Modes, ModeElement}
     # modes::Vector{Mode}
 end
 

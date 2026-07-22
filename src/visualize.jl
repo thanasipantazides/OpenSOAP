@@ -1,6 +1,7 @@
 using GLMakie, Colors, GeometryBasics, LinearAlgebra, Rotations
 using SatelliteToolboxBase, SatelliteToolboxTransformations
 using FileIO
+using Dates
 using Distributions
 
 function lookat_orbit!(ax::Makie.LScene, t_jd_s, soln::Dict)
@@ -969,15 +970,17 @@ function plot_magnetic_field!(ax::Makie.LScene, t_jd_s, soln::Dict, eops)
 
     width_scale = 0.01
     length_scale = 0.1
-    arrows!(
+    arrows3d!(
         ax,
         b_tail_all,
         b_head_all,
         color=b_lens_all,
         colormap=:cool,
-        linewidth=r_E*width_scale,
-        lengthscale=r_E*length_scale,
-        arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
+        # linewidth=r_E*width_scale,
+        shaftradius=r_E*length_scale,
+        tipradius=1.5*r_E*width_scale,
+        tiplength=2*r_E*width_scale,
+        # arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
         # align=:center
         # diffuse=0.8,
         # backlight=1.0
@@ -1036,23 +1039,27 @@ function plot_frames!(ax::Makie.LScene, t_jd_s, soln::Dict, eops)
     end
 
     # drawing earth axes:
-    arrows!(
+    arrows3d!(
         ax,
         ecef_axes_tails,
         ecef_axes_heads,
         color=colors,
-        linewidth=ecef_arrow_scale*r_E,
-        arrowsize=Vec3f(ecef_arrow_scale*r_E, ecef_arrow_scale*r_E, ecef_arrow_scale*3*r_E)
+        shaftradius=ecef_arrow_scale*r_E,
+        tipradius=ecef_arrow_scale*r_E,
+        tiplength=ecef_arrow_scale*3*r_E
+        # arrowsize=Vec3f(ecef_arrow_scale*r_E, ecef_arrow_scale*r_E, ecef_arrow_scale*3*r_E)
     )
 
     # drawing spacecraft body frame
-    arrows!(
+    arrows3d!(
         ax,
         body_axes_tails,
         body_axes_heads,
         color=colors,
-        linewidth=body_arrow_scale*r_E,
-        arrowsize=Vec3f(body_arrow_scale*r_E, body_arrow_scale*r_E, body_arrow_scale*3*r_E)
+        shaftradius=body_arrow_scale*r_E,
+        tipradius=body_arrow_scale*r_E,
+        tiplength=body_arrow_scale*3*r_E
+        # arrowsize=Vec3f(body_arrow_scale*r_E, body_arrow_scale*r_E, body_arrow_scale*3*r_E)
     )
 end
 
@@ -1475,12 +1482,14 @@ function Makie.plot!(polyplot::PolyPlot{<:Tuple{Polyhedron}})
             color=:blue
         )
 
-        arrows!(polyplot,
+        arrows3d!(polyplot,
             [Point3f(c)],
             [Vec3f(n)],
             color=:black,
-            linewidth=nscale*scale,
-            arrowsize=Vec3f(nscale*scale, nscale*scale, 3*nscale*scale)
+            shaftradius=nscale*scale,
+            tipradius=nscale*scale,
+            tiplength=3*nscale*scale
+            # arrowsize=Vec3f(nscale*scale, nscale*scale, 3*nscale*scale)
         )
     end
     polyplot
@@ -1511,21 +1520,34 @@ function plot_moc!(
 
     # al = AmbientLight(RGBf(243/255, 241/255, 230/255))
     al = AmbientLight(RGBf(0.4,0.4,0.4))
+    dl_init = DirectionalLight(RGBf(243/255, 241/255, 218/255), Vec3f(-SatelliteToolboxCelestialBodies.sun_position_mod(times[1]/3600/24)))
     ax_globe = LScene(
         fig[1:3,1], 
         show_axis = false, 
         scenekw = (
             # lights=[dl, al], 
-            lights = [al],
+            lights = [al, dl_init],
             # backgroundcolor=:black, 
-            clear=true
+            clear=true,
+            shading=FastShading
         ),
         tellheight = false
     )
 
-    layout_sc_options = GridLayout(fig[1, 2], tellheight = false)
-    layout_env_options = GridLayout(fig[2, 2], tellheight = false)
-    layout_cam_options = GridLayout(fig[3, 2], tellheight = false)
+    layout_hist = GridLayout(fig[1:3, 2])
+    times_utc = [SatelliteToolboxBase.jd_to_date(Dates.DateTime, times[k]/24/3600) for k in 1:length(times)]
+    battery = [states[k].battery / sim.mission.spacecraft.power.capacity for k in 1:length(times)]
+    storage = [states[k].storage / sim.mission.spacecraft.data.capacity for k in 1:length(times)]
+    ax_battery = Axis(layout_hist[1,1], xlabel="Time", ylabel="Battery")
+    ax_storage = Axis(layout_hist[2,1], xlabel="Time", ylabel="Data storage")
+    lines!(ax_battery, times_utc, battery, color=:black)
+    lines!(ax_storage, times_utc, storage, color=:black)
+    hidexdecorations!(ax_battery, grid = false)
+    linkxaxes!(ax_battery, ax_storage)
+    
+    layout_sc_options  = GridLayout(fig[1, 3], tellheight = false)
+    layout_env_options = GridLayout(fig[2, 3], tellheight = false)
+    layout_cam_options = GridLayout(fig[3, 3], tellheight = false)
 
     Label(layout_sc_options[1, 1],
         "Spacecraft",
@@ -1538,15 +1560,15 @@ function plot_moc!(
     colsize!(layout_sc_options, 1, 50)
     cb_sc_axes = Checkbox(layout_sc_options[2, 1], checked = false, halign=:right)
     lb_sc_axes = Label(layout_sc_options[2, 2], "axes", halign=:left)
-    cb_sc_cad = Checkbox(layout_sc_options[3, 1], checked = false, halign=:right)
+    cb_sc_cad = Checkbox(layout_sc_options[3, 1], checked = true, halign=:right)
     lb_sc_cad = Label(layout_sc_options[3, 2], "model", halign=:left)
     cb_sc_head = Checkbox(layout_sc_options[4, 1], checked = true, halign=:right)
     lb_sc_head = Label(layout_sc_options[4, 2], "head", halign=:left)
     cb_sc_path = Checkbox(layout_sc_options[5, 1], checked = true, halign=:right)
     lb_sc_path = Label(layout_sc_options[5, 2], "path", halign=:left)
-    cb_sc_mode = Toggle(layout_sc_options[6,1], active = false, halign=:right)
+    cb_sc_mode = Toggle(layout_sc_options[6,1], active = true, halign=:right)
     lb_sc_mode = Label(layout_sc_options[6,2], "mode", halign=:left)
-    cb_sc_dirs = Checkbox(layout_sc_options[7,1], checked = false, halign=:right)
+    cb_sc_dirs = Checkbox(layout_sc_options[7,1], checked = true, halign=:right)
     lb_sc_dirs = Label(layout_sc_options[7,2], "directions", halign=:left)
     cb_sc_attref = Checkbox(layout_sc_options[8,1], checked = false, halign=:right)
     lb_sc_attref = Label(layout_sc_options[8,2], "attitude reference", halign=:left)
@@ -1564,9 +1586,9 @@ function plot_moc!(
     lb_env_axes = Label(layout_env_options[2, 2], "axes", halign=:left)
     cb_env_globe = Checkbox(layout_env_options[3, 1], checked = true, halign=:right)
     lb_env_globe = Label(layout_env_options[3, 2], "globe", halign=:left)
-    cb_env_grid = Checkbox(layout_env_options[4, 1], checked = false, halign=:right)
+    cb_env_grid = Checkbox(layout_env_options[4, 1], checked = true, halign=:right)
     lb_env_grid = Label(layout_env_options[4, 2], "grids", halign=:left)
-    cb_env_gs_loc = Checkbox(layout_env_options[5, 1], checked = false, halign=:right)
+    cb_env_gs_loc = Checkbox(layout_env_options[5, 1], checked = true, halign=:right)
     lb_env_gs_loc = Label(layout_env_options[5, 2], "groundstations", halign=:left)
     cb_env_orbit_field = Checkbox(layout_env_options[6, 1], checked = false, halign=:right)
     lb_env_field = Label(layout_env_options[6, 2], "orbit B-field", halign=:left)
@@ -1583,11 +1605,14 @@ function plot_moc!(
     colgap!(layout_cam_options, 4)
     colsize!(layout_cam_options, 1, 50)
     
-    cb_cam_spin = Button(layout_cam_options[2, 1], label="spin", halign=:right)
+    cb_cam_run = Button(layout_cam_options[2, 1], label="run", halign=:center)
+    cb_cam_spin = Button(layout_cam_options[3, 1], label="spin", halign=:center)
+    cb_cam_lookat = Button(layout_cam_options[4, 1], label="lookat", halign=:center)
     # lb_cam_spin = Label(layout_ctrl_options[2, 2], "spin", halign=:left)
 
 
-    colsize!(fig.layout, 1, Relative(3/4))
+    colsize!(fig.layout, 1, Relative(1/2))
+    colsize!(fig.layout, 2, Relative(1/3))
 
     # move the plotted timestep with arrow keys:
     timestep = Observable(1)
@@ -1609,6 +1634,15 @@ function plot_moc!(
         end
     end
 
+    on(cb_cam_run.clicks, priority=1) do c
+        @async for k in 1:20:length(times)
+            timestep[] = k
+            notify(timestep)
+            sleep(1.0/30)
+        end
+        Consume(true)
+    end
+    
     on(cb_cam_spin.clicks, priority=1) do c
         # eye = Vec3d(2*r_E*cos(ang),2*r_E*sin(ang),0)
         @async for ang in 0:0.1:2*pi
@@ -1623,6 +1657,38 @@ function plot_moc!(
         end
         Consume(true)
     end
+    
+    function lookat_orbit_obs()
+        orbit_normal = LinearAlgebra.cross(states[timestep[]].position, states[timestep[]].velocity)
+        orbit_normal = normalize(orbit_normal)
+        
+        cam = Makie.cameracontrols(ax_globe.scene)
+        # update_cam!(ax_globe.scene, cam, Vec3f(2*r_E*cos(ang),2*r_E*sin(ang),0), Vec3f(0.0))
+        cam.lookat[] = Vec3f(0.0)
+        zoom = norm(cam.eyeposition[])
+        cam.eyeposition[] = Vec3f(zoom*orbit_normal)
+        cam.upvector[] = Vec3f(0.0,0.0,1.0)
+        update_cam!(ax_globe.scene, cam)
+        Consume(true)
+    end
+    
+    on(cb_cam_lookat.clicks, priority=1) do c
+        lookat_orbit_obs()
+    end
+    
+    timestep_UTC = lift(timestep) do timestep
+        return SatelliteToolboxBase.jd_to_date(Dates.DateTime, times[timestep]/24/3600)
+    end
+    battery_timestep = lift(timestep) do timestep
+        return states[timestep].battery / sim.mission.spacecraft.power.capacity
+    end
+    storage_timestep = lift(timestep) do timestep
+        return states[timestep].storage / sim.mission.spacecraft.data.capacity
+    end
+    
+    scatter!(ax_battery, timestep_UTC, battery_timestep, color=:black, markersize=12)
+    scatter!(ax_storage, timestep_UTC, storage_timestep, color=:black, markersize=12)
+    # vlines!(ax_storage, [timestep_UTC], color=:gray)
     
     # plotting spacecraft position
     mode_colors = Dict(
@@ -1675,16 +1741,20 @@ function plot_moc!(
     r_E = EARTH_EQUATORIAL_RADIUS
     r_P = EARTH_POLAR_RADIUS
     
+    body_arrow_scale = 0.1
+    ecef_arrow_scale = 1.5
+    traj_arrow_scale = 0.1
+    
     C_IF = lift(timestep) do timestep
         C_IF_r = r_ecef_to_eci(ITRF(), J2000(), times[timestep]/24/3600, eops)
         return Matrix(C_IF_r)
     end
     
-    ecef_arrow_scale = 0.025
-    ecef_axis_scale = 1.33
+    # ecef_arrow_scale = 0.025
+    # ecef_axis_scale = 1.33
 
     tail = zeros(3,3)
-    ecef_tip = diagm([1;1;1])*r_E*ecef_axis_scale
+    ecef_tip = diagm([1;1;1]) #*r_E*ecef_axis_scale
 
     ecef_axes_heads = lift(C_IF) do C_IF
         return [Vec3f(C_IF*ecef_tip[:,i]) for i in 1:3]
@@ -1692,13 +1762,17 @@ function plot_moc!(
     ecef_axes_tails = [Point3f(tail[:,i]) for i in 1:3]
 
     # drawing earth axes:
-    arrows!(
+    arrows3d!(
         ax_globe,
         ecef_axes_tails,
         ecef_axes_heads,
         color=axes_colors,
-        linewidth=ecef_arrow_scale*r_E,
-        arrowsize=Vec3f(ecef_arrow_scale*r_E, ecef_arrow_scale*r_E, ecef_arrow_scale*3*r_E),
+        lengthscale=r_E*ecef_arrow_scale,
+        shaftradius=0.01,
+        tipradius=0.01,
+        tiplength=0.02,
+        taillength=0,
+        # arrowsize=Vec3f(ecef_arrow_scale*r_E, ecef_arrow_scale*r_E, ecef_arrow_scale*3*r_E),
         shading=NoShading,
         visible=cb_env_axes.checked
     )
@@ -1715,13 +1789,15 @@ function plot_moc!(
         return [Point3f(C_IF*pos) for pos in gs_pos_ecef]
     end
 
-    sunlight_dir = lift(timestep) do timestep
-        # note: this is used to locate a Makie.DirectionalLight object, which wants
-        #   the direction of light rays, not the position of the emitter.
-        return Vec3f(-SatelliteToolboxCelestialBodies.sun_position_mod(times[timestep]/3600/24))
+    # sunlight_dir = lift(timestep) do timestep
+    #     # note: this is used to locate a Makie.DirectionalLight object, which wants
+    #     #   the direction of light rays, not the position of the emitter.
+    #     return Vec3f(-SatelliteToolboxCelestialBodies.sun_position_mod(times[timestep]/3600/24))
+    # end
+    on(timestep) do timestep
+        # dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), Vec3f(-SatelliteToolboxCelestialBodies.sun_position_mod(times[timestep]/3600/24)))
+        set_directional_light!(ax_globe, color=RGBf(243/255, 241/255, 218/255), direction=Vec3f(-SatelliteToolboxCelestialBodies.sun_position_mod(times[timestep]/3600/24)))
     end
-    dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), sunlight_dir)
-    push!(ax_globe.scene.lights, dl)
 
     # making surface texture:
     nθ = length(texture[:,1])
@@ -1775,7 +1851,7 @@ function plot_moc!(
         color=texture,
         diffuse=Vec3f(0.6),
         specular=Vec3f(0.2),
-        shininess=0.2,
+        # shininess=0.2,
         invert_normals=true,
         visible=cb_env_globe.checked
     )
@@ -1820,7 +1896,7 @@ function plot_moc!(
         mag_func = Observable(Base.Fix2(mag_now_eci, k))
     end
 
-    width_scale = 0.005
+    # width_scale = 0.005
     # streamplot!(
     #     ax_globe,
     #     mag_func,
@@ -1842,7 +1918,7 @@ function plot_moc!(
     
 
     field_step = 50
-    ref_step = 10
+    ref_step = 20
 
     n_field = tail_length ÷ field_step
     n_ref = tail_length ÷ ref_step
@@ -1905,19 +1981,21 @@ function plot_moc!(
         notify(field_index)
         notify(field_alpha)
         
+        
+        
         # build global magnetic field
-        for (i,p) in enumerate(global_field_lla)
-            timeindex = time_range[end]
-            igrf_pos_ecef = geocentric_to_ecef(Vector(p))
-            C_IF_loc = r_ecef_to_eci(ITRF(), J2000(), times[timeindex]/24/3600, eops)
-            igrf_global_eci = C_IF_loc*position_ecef(mag_target, igrf_pos_ecef, times[timeindex], max_degree=3)
-            global_field_tail[][i] = Point3f(C_IF_loc*igrf_pos_ecef)
-            global_field_head[][i] = Point3f(igrf_global_eci ./ norm(igrf_global_eci))
-            global_field_index[][i] = norm(igrf_global_eci)
-        end
-        notify(global_field_tail)
-        notify(global_field_head)
-        notify(global_field_index)
+        # for (i,p) in enumerate(global_field_lla)
+        #     timeindex = time_range[end]
+        #     igrf_pos_ecef = geocentric_to_ecef(Vector(p))
+        #     C_IF_loc = r_ecef_to_eci(ITRF(), J2000(), times[timeindex]/24/3600, eops)
+        #     igrf_global_eci = C_IF_loc*position_ecef(mag_target, igrf_pos_ecef, times[timeindex], max_degree=3)
+        #     global_field_tail[][i] = Point3f(C_IF_loc*igrf_pos_ecef)
+        #     global_field_head[][i] = Point3f(igrf_global_eci ./ norm(igrf_global_eci))
+        #     global_field_index[][i] = norm(igrf_global_eci)
+        # end
+        # notify(global_field_tail)
+        # notify(global_field_head)
+        # notify(global_field_index)
 
         sparse_ref_range = first_index:ref_step:time_range[end]
         sparse_ref_range = sparse_ref_range[1:n_ref]
@@ -1942,40 +2020,40 @@ function plot_moc!(
         notify(ref_color)
         notify(ref_alpha)
 
-        # maneuvering
-        m_idx = [key for key in keys(reference_attitude) if key in time_range[1]..time_range[end]]
+        # # maneuvering
+        # m_idx = [key for key in keys(reference_attitude) if key in time_range[1]..time_range[end]]
 
-        man_x[] = [Point3f(NaN)]
-        man_y[] = [Point3f(NaN)]
-        man_z[] = [Point3f(NaN)]
-        ll = 0
-        for m in m_idx
-            man = reference_attitude[m]
-            man_states = man[2]
-            push!(man_x[], Point3f(man_states[1].position))
-            push!(man_y[], Point3f(man_states[1].position))
-            push!(man_z[], Point3f(man_states[1].position))
-            append!(man_x[], Point3f[s.position + man_scale*s.attitude[:,1] for s in man_states])
-            append!(man_y[], Point3f[s.position + man_scale*s.attitude[:,2] for s in man_states])
-            append!(man_z[], Point3f[s.position + man_scale*s.attitude[:,3] for s in man_states])
-            push!(man_x[], Point3f(man_states[end].position))
-            push!(man_y[], Point3f(man_states[end].position))
-            push!(man_z[], Point3f(man_states[end].position))
-            push!(man_x[], Point3f(NaN))
-            push!(man_y[], Point3f(NaN))
-            push!(man_z[], Point3f(NaN))
-	        tl = length(man_states) + 3 - ll
-	        ll = length(man_states) + 3
-            append!(man_col_x[],[RGBAf(1.0,0.0,0.0,c/tl) for c in 1:tl])
-            append!(man_col_y[],[RGBAf(0.0,1.0,0.0,c/tl) for c in 1:tl])
-            append!(man_col_z[],[RGBAf(0.0,0.0,1.0,c/tl) for c in 1:tl])
-        end
-        notify(man_x)
-        notify(man_y)
-        notify(man_z)
-        notify(man_col_x)
-        notify(man_col_y)
-        notify(man_col_z)
+        # man_x[] = [Point3f(NaN)]
+        # man_y[] = [Point3f(NaN)]
+        # man_z[] = [Point3f(NaN)]
+        # ll = 0
+        # for m in m_idx
+        #     man = reference_attitude[m]
+        #     man_states = man[2]
+        #     push!(man_x[], Point3f(man_states[1].position))
+        #     push!(man_y[], Point3f(man_states[1].position))
+        #     push!(man_z[], Point3f(man_states[1].position))
+        #     append!(man_x[], Point3f[s.position + man_scale*s.attitude[:,1] for s in man_states])
+        #     append!(man_y[], Point3f[s.position + man_scale*s.attitude[:,2] for s in man_states])
+        #     append!(man_z[], Point3f[s.position + man_scale*s.attitude[:,3] for s in man_states])
+        #     push!(man_x[], Point3f(man_states[end].position))
+        #     push!(man_y[], Point3f(man_states[end].position))
+        #     push!(man_z[], Point3f(man_states[end].position))
+        #     push!(man_x[], Point3f(NaN))
+        #     push!(man_y[], Point3f(NaN))
+        #     push!(man_z[], Point3f(NaN))
+	       #  tl = length(man_states) + 3 - ll
+	       #  ll = length(man_states) + 3
+        #     append!(man_col_x[],[RGBAf(1.0,0.0,0.0,c/tl) for c in 1:tl])
+        #     append!(man_col_y[],[RGBAf(0.0,1.0,0.0,c/tl) for c in 1:tl])
+        #     append!(man_col_z[],[RGBAf(0.0,0.0,1.0,c/tl) for c in 1:tl])
+        # end
+        # notify(man_x)
+        # notify(man_y)
+        # notify(man_z)
+        # notify(man_col_x)
+        # notify(man_col_y)
+        # notify(man_col_z)
     end
 
     lines!(
@@ -1998,10 +2076,10 @@ function plot_moc!(
         visible=cb_sc_attref.checked
     )
 
-    width_scale = 0.005
-    length_scale = 0.1
+    # width_scale = 0.01
+    # length_scale = 0.05
     
-    arrows!(
+    arrows3d!(
         ax_globe,
         field_tail,
         field_head,
@@ -2011,16 +2089,20 @@ function plot_moc!(
         # alpha=field_alpha,
         colormap=:berlin,
         # colormap=:cool,
-        linewidth=r_E*width_scale,
-        lengthscale=r_E*length_scale,
-        arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
+        # linewidth=r_E*width_scale,
+        lengthscale=r_E*traj_arrow_scale,
+        shaftradius=0.03,
+        tipradius=0.03,
+        tiplength=0.06,
+        taillength=0,
+        # arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
         # align=:center
         # diffuse=0.8,
         # backlight=1.0
         shading=NoShading,
         visible=cb_env_orbit_field.checked
     )
-    arrows!(
+    arrows3d!(
         ax_globe,
         global_field_tail,
         global_field_head,
@@ -2030,34 +2112,42 @@ function plot_moc!(
         # alpha=field_alpha,
         colormap=:matter,
         # colormap=:cool,
-        linewidth=r_E*width_scale,
-        lengthscale=r_E*length_scale,
-        arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
+        # linewidth=r_E*width_scale,
+        lengthscale=r_E*traj_arrow_scale,
+        shaftradius=0.03,
+        tipradius=0.03,
+        tiplength=0.06,
+        taillength=0,
+        # arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
         # align=:center
         # diffuse=0.8,
         # backlight=1.0
         shading=NoShading,
         visible=cb_env_global_field.checked
     )
-    arrows!(
+    arrows3d!(
         ax_globe,
         ref_tail,
         ref_head,
         color=ref_color,
-        alpha=ref_alpha,
-        linewidth=r_E*width_scale,
-        lengthscale=r_E*length_scale,
-        arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
+        # alpha=ref_alpha,
+        # linewidth=r_E*width_scale,
+        lengthscale=r_E*traj_arrow_scale,
+        shaftradius=0.01,
+        tipradius=0.01,
+        tiplength=0.02,
+        taillength=0,
+        # arrowsize=Vec3f(1.5*r_E*width_scale, 1.5*r_E*width_scale, 2*r_E*width_scale),
         shading=NoShading,
         visible=cb_sc_dirs.checked
     )
 
 
     # drawing spacecraft body frame
-    body_arrow_scale = 0.01
-    body_axis_scale = 0.1
+    # const body_arrow_scale = 0.05
+    # body_axis_scale = 0.05
 
-    body_tip = diagm([1;1;1])*r_E*body_axis_scale
+    body_tip = diagm([1;1;1]) #*r_E*body_axis_scale
 
     C_BI = lift(timestep) do timestep
         return states[timestep].attitude
@@ -2068,13 +2158,19 @@ function plot_moc!(
     body_axes_tails = lift(pos) do pos
         return Point3f[pos for i in 1:3]
     end
-    arrows!(
+    arrows3d!(
         ax_globe,
         body_axes_tails,
         body_axes_heads,
         color=axes_colors,
-        linewidth=body_arrow_scale*r_E,
-        arrowsize=Vec3f(body_arrow_scale*r_E, body_arrow_scale*r_E, body_arrow_scale*3*r_E),
+        lengthscale=r_E*body_arrow_scale,
+        shaftradius=0.03,
+        tipradius=0.03,
+        tiplength=0.06,
+        taillength=0,
+        # tipradius=body_arrow_scale*r_E,
+        # tiplength=body_arrow_scale*r_E,
+        # arrowsize=Vec3f(body_arrow_scale*r_E, body_arrow_scale*r_E, body_arrow_scale*3*r_E),
         shading=NoShading,
         visible = cb_sc_axes.checked
     )
@@ -2099,4 +2195,18 @@ function plot_moc!(
     on(pos) do pos
         translate!(cad_mesh, pos[1], pos[2], pos[3])
     end
+    
+    # println("recording...")
+    # lookat_orbit_obs()
+    
+    # framerate = 30
+    # stepsize = 10
+    # timesteps = 1:stepsize:length(times)
+    
+    
+    # record(fig, "cases/default_impax.mp4", timesteps; framerate = framerate) do t
+    #     timestep[] = t
+    # end
+    
+    # println("recording done.")
 end
