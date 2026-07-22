@@ -33,7 +33,7 @@ function get_sphere_mesh(texture)
 end
 
 function test_texture()
-    texture = load_earth_texture_to_ecef("/Users/thanasi/Documents/OpenSOAP/assets/map_diffuse.png")
+    texture = load_earth_texture_to_ecef("assets/map_diffuse.png")
     GLMakie.activate!()
     nθ = length(texture[:,1])
     nφ = length(texture[1,:])
@@ -101,7 +101,7 @@ function show()
     sock = Sockets.UDPSocket()
     # bind(sock, unixsockname)
     sock = Sockets.connect(unixsockname)
-    textureprefix = joinpath("/", "Users", "thanasi", "Documents", "OpenSOAP", "assets")
+    textureprefix = joinpath("assets")
     textures = ["map_diffuse.png", "map_pol1.png", "map_pol2.png", "map_marble.png", "map_bathy.png", "map_bw.png", "map_snow.jpeg", "map_veggie.jpeg", "map_tissot.jpg", "map_cities.png"]
     texturek = 1
     texture = Observable(load_earth_texture_to_ecef(joinpath(textureprefix, textures[texturek])))
