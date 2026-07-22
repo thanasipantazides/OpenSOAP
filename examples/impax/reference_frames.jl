@@ -53,20 +53,20 @@ function plot_orbit!(ax::Makie.LScene, t_jd_s, iers_eops; do_ned::Bool=true)
 
     colors = [:red, :green, :blue]
 
-    lines!(
-        ax,
-        r_X,
-        r_Y,
-        r_Z,
-        color=color
-    )
-    scatter!(
-        ax,
-        term_I[1],
-        term_I[2],
-        term_I[3],
-        color=:black
-    )
+    # lines!(
+    #     ax,
+    #     r_X,
+    #     r_Y,
+    #     r_Z,
+    #     color=color
+    # )
+    # scatter!(
+    #     ax,
+    #     term_I[1],
+    #     term_I[2],
+    #     term_I[3],
+    #     color=:black
+    # )
 
     if do_ned
         arrows!(
@@ -92,33 +92,33 @@ end
 
 function plot_body!(ax::Makie.LScene, t_jd_s, iers_eops, object::String, position)
     r_E = SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS
-    model = load(joinpath("assets","IMPAX_mech_clean.obj"))
+    model = load(joinpath("assets","IMPAX_mech_clean_tmp.obj"))
     
     loc = [position[1][end], position[2][end], position[3][end]]
 
     scale = 0.5*r_E/1e2
-    arrow_length = 0.2 * r_E
+    arrow_length = 0.3 * r_E
     arrow_width = 0.01 * r_E
 
-    eci_basis = diagm([1.0,1.0,1.0])
+    eci_basis = r_euler3(-pi/2)*diagm([1.0,1.0,1.0])
     axes_tails = [Point3f(loc) for k in 1:3]
     body_axes = r_random()
     body_heads = [Vec3f(arrow_length*body_axes*eci_basis[:,k]) for k in 1:3]
-    body_label_pos = [1.5 * body_heads[k] + axes_tails[k] for k in 1:3]
+    body_label_pos = [1.05 * body_heads[k] + axes_tails[k] for k in 1:3]
     colors = [:red, :green, :blue]
 
     m = mesh!(
         ax,
         model,
         color=:grey,
-        alpha=0.5,
+        alpha=1.0,
         space=:data,
     )
 
     q = Makie.Quaternion(body_axes)
 
-    scale!(m, scale, scale, scale)
-    translate!(m, loc...)
+    GLMakie.scale!(m, scale, scale, scale)
+    GLMakie.translate!(m, loc...)
     GLMakie.rotate!(m, q)
 
     arrows!(
@@ -134,7 +134,7 @@ function plot_body!(ax::Makie.LScene, t_jd_s, iers_eops, object::String, positio
         body_label_pos,
         text=[L"B_1", L"B_2", L"B_3"],
         align=(:center, :center),
-        fontsize=20,
+        fontsize=30,
         color=:black
         # markerspace=:data
     )
@@ -327,21 +327,22 @@ function main()
     dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), sun_I)
     al = AmbientLight(RGBf(0.2, 0.2, 0.2))
     al = AmbientLight(RGBf(0.8, 0.8, 0.8))
-    al = AmbientLight(RGBf(243/255, 241/255, 230/255))
+    # al = AmbientLight(RGBf(243/255, 241/255, 230/255))
 
     ax = LScene(
         fig[1,1], 
         show_axis=false, 
         scenekw=(
-            # lights=[dl, al], 
-            lights = [al],
+            lights=[dl, al], 
+            # lights = [al],
             # backgroundcolor=:black, 
             clear=true
         )
     )
 
-    plot_globe!(ax, t_jd_s, eops, texture)
+    # plot_globe!(ax, t_jd_s, eops, texture)
     orb = plot_orbit!(ax, t_jd_s, eops; do_ned = false)
     plot_body!(ax, t_jd_s, eops, "", orb)
-    save(joinpath("cases", "eci_ecef_fig.png"), fig)
+    save(joinpath("cases", "body.png"), fig, px_per_unit=4)
+    return fig
 end
