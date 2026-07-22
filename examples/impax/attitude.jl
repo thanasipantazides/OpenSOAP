@@ -1,6 +1,6 @@
 using OpenSOAP
 using GLMakie, GeometryBasics
-import LinearAlgebra
+using LinearAlgebra
 import JuMP, Ipopt, MathOptInterface
 
 function wheel_momenta()
