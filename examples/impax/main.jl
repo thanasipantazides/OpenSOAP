@@ -22,9 +22,16 @@ function main()
     catch e
     end
     
-    println("loaded.")
+    sim.initstate[10:18] = r_min_arc([0;1;0],sim.initstate[4:6])[:]
 
-    times, states, target_visibilities, target_choice, reference_directions, reference_attitude = simulate(sim, Dict{String,String}())
+
+    (times, 
+    states, 
+    target_visibilities, 
+    target_choice, 
+    reference_directions, 
+    reference_attitude, 
+    aggregate_downlink) = simulate(sim, Dict{String,String}(); logfile=joinpath("cases", "default.csv"))
 
     # println("integrating...")
     # soln = integrate_system(dynamics_orbit!, sim.initstate, sim.tspan, sim.dt, sim)
@@ -72,7 +79,7 @@ function main()
 
     # uncomment for an example plot of battery level:
     GLMakie.activate!(title="OpenSOAP")
-    fig = Figure(size=(900, 900)) # create a new figure
+    fig = Figure(size=(1200, 900)) # create a new figure
     display(fig) # show the Figure on the screen
 
     plot_moc!(
