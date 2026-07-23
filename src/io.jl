@@ -238,8 +238,8 @@ function load_config(d::Dict{String, Any})
         Vec3d(0.0), Vec3d(0.0),     # net force, moment
         Vec3d(d["simulation"]["initial"]["position"]), 
         Vec3d(d["simulation"]["initial"]["velocity"]),             
-        Vec3d(0.0), 
-        initial_attitude,           # angvel, attitude
+        Vec3d(d["simulation"]["initial"]["angular_velocity"]),
+        initial_attitude,           # attitude
         0.0, 0.0,                   # net power, net data flows
         d["simulation"]["initial"]["battery"], d["simulation"]["initial"]["storage"], # battery, data storage
         IDType(0x00),               # mode

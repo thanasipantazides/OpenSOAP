@@ -28,6 +28,13 @@ mutable struct RateMessage<:ControlMessage
     message::UInt8
 end
 
+mutable struct PerturbationMessage<:ControlMessage
+    moment_Body::Vec3d
+    moment_duration::UInt32 # number of counter steps to sustain
+    force_ECI::Vec3d
+    force_duration::UInt32 # number of counter steps to sustain
+end
+
 # some static configuration for stuff the mission wants to look at
 abstract type AbstractConfig<:NetworkMessage end
 # something with a time-dependent state
@@ -287,50 +294,8 @@ function run()
         GroundState(0x0003, 0.0, 8,  pi/180*Vec3d(-33.86777, 151.21, 5.0), SatelliteToolboxTransformations.r_ecef_to_eci(SatelliteToolboxTransformations.ITRF(), SatelliteToolboxTransformations.J2000(), SatelliteToolboxBase.date_to_jd(sim.start_time), eop)*SatelliteToolboxTransformations.geodetic_to_ecef((pi/180*Vec3d(-33.86777, 151.21, 5.0))...), false, false),
     ]
     
-    # modelist = [
-    #     ModeConfig(0x0101, "idle",      Nothing,    Makie.RGBAf(42/255, 133/255, 255/255), 5.0, 1e3, Vec3d(1.0,0.0,0.0)),
-    #     ModeConfig(0x0102, "charging",  SunState,   Makie.RGBAf(255/255, 201/255, 74/255), 5.0, 10e3, Vec3d(-1.0,0.0,0.0)),
-    #     ModeConfig(0x0103, "downlink",  State, Makie.RGBAf(157/255, 226/255, 107/255), 23.0, 10e3, Vec3d(1.0,0.0,0.0)),
-    #     ModeConfig(0x0104, "science",   Nothing,    Makie.RGBAf(206/255, 155/255, 255/255), 20.0, 10e3, Vec3d(1.0,0.0,0.0))
-    # ]
-    
-    # params["modes"] = mode_table(load_mode_config(""))
-    
-    # r0m = 6871e3
-    # inc0 = 60*pi/180
-    # v0m = sqrt(3.986e14/r0m)*1.05
-    # pos_I0 = [r0m;0.0;0.0]
-    # vel_I0 = [0.0;v0m*cos(inc0);v0m*sin(inc0)]
-    # pos_state = PositionState(
-    #     0,
-    #     pos_I0,
-    #     vel_I0
-    # )
-    # att_state = AttitudeState(
-    #     0,
-    #     rand(3)*1e-3,
-    #     Mat3d(I)
-    # )
-    # sat = SatelliteState(
-    #     IDType(0x00a0),             # ID
-    #     0,                          # met
-    #     Vec3d(0.0), Vec3d(0.0),     # net force, moment
-    #     pos_I0, vel_I0,             
-    #     rand(3)*1e-4, Mat3d(I),     # angvel, attitude
-    #     0.0, 0.0,                   # net power, net data flows
-    #     0.0, 0.0,                   # batter, data storage
-    #     UInt16(0x00),               # mode
-    #     Vec3d(NaN),                 # target dir 
-    #     false, false                # target visible, pointed
-    # )
     sun_state = filter(x -> isa(x, SunState), targets)[1]
-    # sun_state = SunState(
-    #     IDType(0x00e0),
-    #     0,
-    #     12,
-    #     SatelliteToolboxCelestialBodies.sun_position_mod(sim.start_time),
-    #     false, false
-    # )
+    
     earth_state = EarthState(
         IDType(0x00f0),
         0,
@@ -344,6 +309,9 @@ function run()
     
     play = Ref(UInt8(0x01))
     playrate = Ref(UInt8(0xff))
+    perturbation = Ref(PerturbationMessage(Vec3d(0.0), 0.0, Vec3d(0.0), 0.0))
+    # perturb_moment = Ref(Vec3d(0.0))
+    # perturb_moment_count = Ref(UInt32(0x0000))
     packlen = 1
     headbuff = zeros(UInt8, 8)
     buff = zeros(UInt8, packlen)
@@ -368,6 +336,10 @@ function run()
                 playrate[] = cmd.message
                 println("> resting: ", playrate[])
             end
+            if type === PerturbationMessage
+                perturbation[] = cmd
+                println("> perturbing: ", cmd)
+            end
         else
             close(sock)
         end
@@ -379,7 +351,7 @@ function run()
     while true
         if play[] == 0x01
             # update all dynamic systems
-            step_sim!(sat, earth_state, targets, sim.time_step, time, target_configs, modes, mode_table, sat_config, params)
+            step_sim!(sat, earth_state, targets, sim.time_step, time, target_configs, modes, mode_table, sat_config, params; exog=perturbation[])
             # update timestep
             time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
             
@@ -403,6 +375,12 @@ function run()
                 elseif sim.step_count % playrate[] == 0
                     sleep(0.01)
                 end
+            end
+
+            if perturbation[].moment_duration > 0 && norm(perturbation[].moment_Body) != 0.0
+                perturbation[].moment_duration -= 1
+            else
+                perturbation[].moment_Body = Vec3d(0.0)
             end
         else
             sleep(0.1)

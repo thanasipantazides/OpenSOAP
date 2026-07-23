@@ -122,9 +122,12 @@ function show()
     stor = Observable([NaN for k in 1:obbufflen])
     power = Observable([NaN for k in 1:obbufflen])
     data = Observable([NaN for k in 1:obbufflen])
+    rSO3 = Observable([NaN for k in 1:obbufflen])
     target_dir_ECI = Observable([Point3d(NaN) for k in 1:2])
     q_ECEF_ECI = Observable(Makie.Quaternion(0.0,0.0,0.0,1.0))
     pos_sun_ECI = Observable(Vec3d(0.0))
+    moment_ECI = Observable([Vec3d(NaN) for k in 1:2])
+    angular_velocity_ECI = Observable([Vec3d(NaN) for k in 1:2])
     met = Observable(Float64(0.0))
     met_label = lift(met) do l
         return format_clock(l, start_time)
@@ -133,7 +136,7 @@ function show()
     body_frame_visible = Observable(false)
     
     cmd_label = Observable("")
-    helpstring = "Commands:\n- h:\tshow help\n- v:\tverbose\n- e:\tchange earth texture\n- f:\tshow/hide Body frame\n- p:\tchange camera projection\n- spacebar:\t\tplay/pause\n- left/right:\tslower/faster\n"
+    helpstring = "Commands:\n- h:\tshow help\n- v:\tverbose\n- e:\tchange earth texture\n- f:\tshow/hide Body frame\n- p:\tchange camera projection\n- k:\tperturb attitude\n- spacebar:\t\tplay/pause\n- left/right:\tslower/faster\n"
     
     body_mesh_val = get_body_mesh()
     
@@ -150,12 +153,14 @@ function show()
     ax_stor = Axis(fig[3,4], ylabel="onboard\ndata [%]", ylabelfont="OCR-B", tellwidth=false)
     ylims!(ax_stor, 0.0, 102)
     ax_data = Axis(fig[4,4], ylabel="datarate\n[Mbps]", ylabelfont="OCR-B", tellwidth=false)
+    ax_dbug = Axis(fig[5,4], ylabel="SO(3) res.", ylabelfont="OCR-B", tellwidth=false)
     # hidedecorations!(ob)
     hidespines!(ax_batt)
     hidespines!(ax_power)
     hidespines!(ax_stor)
     hidespines!(ax_data)
-    linkxaxes!(ax_batt, ax_power, ax_stor, ax_data)
+    hidespines!(ax_dbug)
+    linkxaxes!(ax_batt, ax_power, ax_stor, ax_data, ax_dbug)
     
     idlecolor = RGBAf(42/255, 133/255, 255/255)
     gscolor = RGBAf(157/255, 226/255, 107/255)
@@ -185,10 +190,14 @@ function show()
                                 NaN NaN NaN;
                                 0.0 0.0 0.0;
                                 0.0 0.0 1.0]
+    inertial_frame_v = 13*body_frame_v
     body_frame_color = [fill(:red, 3); fill(:green, 3); fill(:blue, 2)]
+    inertial_frame_color = [fill(:red, 3); fill(:green, 3); fill(:blue, 2)]
     
     lines!(ax, pos_ECI, color=tailcolor, linewidth=2)
     lines!(ax, target_dir_ECI, color=tailcolor, linewidth=1)
+    lines!(ax, moment_ECI, color=:black, linewidth=2)
+    lines!(ax, angular_velocity_ECI, color=:purple, linewidth=1)
     earth_mesh = GLMakie.surface!(
         ax, 
         X_ECI, Y_ECI, Z_ECI,
@@ -209,6 +218,12 @@ function show()
         diffuse=Vec3f(0.7),
         specular=Vec3f(0.3),
         color=:grey
+    )
+    inertial_frame = GLMakie.lines!(
+        ax,
+        inertial_frame_v[:,1], inertial_frame_v[:,2], inertial_frame_v[:,3],
+        color=inertial_frame_color,
+        visible=body_frame_visible
     )
     # C_ECI_ECEF0 = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/3600/24, eops)
     gs_pts = Observable([Point3d(NaN)])
@@ -290,6 +305,13 @@ function show()
         color=:black,
         linewidth=1
     )
+    rSO3_lines = lines!(
+        ax_dbug,
+        ob_time,
+        rSO3,
+        color=:black,
+        linewidth=1
+    )
     
     # println("server: ", server)
     # sock = Sockets.accept(server)
@@ -307,7 +329,7 @@ function show()
     buff = zeros(UInt8, packlen)
     
     play = Ref(UInt8(0x01))
-    sleep = Ref(UInt8(0xff))
+    sleep = Ref(UInt8(0x01))
     last_proj = Ref(UInt8(0x00))
     sleepstep = 8
     # play = 0x01
@@ -360,6 +382,14 @@ function show()
                 cmd_label[] = ">>"
                 write(sock, writeval)
                 println("> sent command ", writeval, " to server")
+                notify(cmd_label)
+            end
+            if event.key == Keyboard.k && play[] == 0x01
+                # todo: configure perturbation magnitude and duration elsewhere
+                pert = PerturbationMessage(Vec3d(5e-4*rand(3)), 5, Vec3d(0.0), 1)
+                writeval = packetize(pert, 0x0000, UInt64(0))
+                cmd_label[] = "kicked!"
+                write(sock, writeval)
                 notify(cmd_label)
             end
             if event.key == Keyboard.escape
@@ -468,6 +498,9 @@ function show()
                 circshift!(data[], -1)
                 data[][end] = simdata.net_data / 1e6
                 notify(data)
+                circshift!(rSO3[], -1)
+                rSO3[][end] = residualSO3(simdata.attitude_ECI_Body)
+                notify(rSO3)
                 circshift!(ob_time[], -1)
                 ob_time[][end] = start_time + Dates.Millisecond(1000*simdata.elapsed_time)
                 notify(ob_time)
@@ -490,15 +523,20 @@ function show()
                 if simdata.target == typemax(IDType)
                     target_dir_ECI[] = [Point3d(NaN), Point3d(NaN)]
                 elseif isa(target_state_table[simdata.target], SunState)
-                    target_dir_ECI[] = [simdata.position_ECI, simdata.position_ECI + 0.5*6371e3*normalize(target_state_table[simdata.target].position_ECI - simdata.position_ECI)]
+                    target_dir_ECI[] = [simdata.position_ECI, simdata.position_ECI + 0.33*6371e3*normalize(target_state_table[simdata.target].position_ECI - simdata.position_ECI)]
                 elseif isa(target_state_table[simdata.target], GroundState)
                     target_dir_ECI[] = [simdata.position_ECI, target_state_table[simdata.target].position_ECI]
                 else
                     println("unidentified target type: ", typeof(mode_conf.target_type))
                 end
+
+                angular_velocity_ECI[] = [simdata.position_ECI, simdata.position_ECI + 5e1*6371e3*simdata.angular_velocity_ECI_Body]
+                moment_ECI[] = [simdata.position_ECI, simdata.position_ECI + 0.2*6371e3*normalize(simdata.attitude_ECI_Body*simdata.net_moment_Body)]
                 
                 notify(tailcolor)
                 notify(target_dir_ECI)
+                notify(angular_velocity_ECI)
+                notify(moment_ECI)
                 
                 # debuginfo[] = rich("target: ", rich(tmp_modename[simdata.mode], color=tmp_modecolor[simdata.mode]))
                 target_name = (simdata.target == typemax(IDType)) ? "" : typeof(target_state_table[simdata.target])

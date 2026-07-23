@@ -10,15 +10,16 @@ import Base.reinterpret
 #   payload...
 # 
 
-global const MESSAGE_TYPES = Dict{DataType, UInt16}(
-    PositionState   =>      0x0010,
-    AttitudeState   =>      0x0011,
-    SatelliteState  =>      0x0020,
-    EarthState      =>      0x0103,
-    SunState        =>      0x0100,
-    GroundState     =>      0x0400,
-    PlayMessage     =>      0x0c01,
-    RateMessage     =>      0x0c02
+global const MESSAGE_TYPES = Dict{DataType,UInt16}(
+    PositionState => 0x0010,
+    AttitudeState => 0x0011,
+    SatelliteState => 0x0020,
+    EarthState => 0x0103,
+    SunState => 0x0100,
+    GroundState => 0x0400,
+    PlayMessage => 0x0c01,
+    RateMessage => 0x0c02,
+    PerturbationMessage => 0x0cd0,
 )
 
 MESSAGE_LOOKUP = Dict(value => key for (key, value) in MESSAGE_TYPES)
@@ -31,10 +32,13 @@ function reinterpret(::Type{UInt8}, s::InlineStrings.InlineString63)
     return v
 end
 # a String deserializer
-function reinterpret(::Type{InlineStrings.InlineString63}, u::Vector{UInt8})::InlineStrings.InlineString63
+function reinterpret(
+    ::Type{InlineStrings.InlineString63},
+    u::Vector{UInt8},
+)::InlineStrings.InlineString63
     sarr = String(reverse(convert(Vector{Char}, u)))
     knull = findfirst('\0', sarr)
-    return join(sarr[1:knull-1])
+    return join(sarr[1:(knull-1)])
 end
 
 # For PositionState type
@@ -43,7 +47,7 @@ function ser(counter::UInt64, state::PositionState)::Vector{UInt8}
     st = reinterpret(UInt8, [state.elapsed_time])
     sp = reinterpret(UInt8, [state.position_ECI])
     sv = reinterpret(UInt8, [state.velocity_ECI])
-    
+
     res = vcat(c, st, sp, sv, UInt8[0x0a])
     return res
 end
@@ -54,14 +58,14 @@ function ser(counter::UInt64, state::AttitudeState)::Vector{UInt8}
     st = reinterpret(UInt8, [state.elapsed_time])
     sw = reinterpret(UInt8, [state.angular_velocity_ECI_Body])
     sm = reinterpret(UInt8, [state.attitude_ECI_Body])
-    
+
     res = vcat(c, st, sw, sm, UInt8[0x0a])
     return res
 end
 
 function ser(counter::UInt64, state::SatelliteState)::Vector{UInt8}
     c = reinterpret(UInt8, [counter])
-    
+
     f0 = reinterpret(UInt8, [state.id])
     f1 = reinterpret(UInt8, [state.elapsed_time])
     f2 = reinterpret(UInt8, [state.net_force_ECI])
@@ -70,7 +74,7 @@ function ser(counter::UInt64, state::SatelliteState)::Vector{UInt8}
     f5 = reinterpret(UInt8, [state.velocity_ECI])
     f6 = reinterpret(UInt8, [state.angular_velocity_ECI_Body])
     f7 = reinterpret(UInt8, [state.attitude_ECI_Body])
-    
+
     f8 = reinterpret(UInt8, [state.net_power])
     f9 = reinterpret(UInt8, [state.net_data])
     f10 = reinterpret(UInt8, [state.battery_level])
@@ -79,8 +83,27 @@ function ser(counter::UInt64, state::SatelliteState)::Vector{UInt8}
     f13 = reinterpret(UInt8, [state.target])
     f14 = reinterpret(UInt8, [state.target_visible])
     f15 = reinterpret(UInt8, [state.target_pointed])
-    
-    res = vcat(c, f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, UInt8[0x0a])
+
+    res = vcat(
+        c,
+        f0,
+        f1,
+        f2,
+        f3,
+        f4,
+        f5,
+        f6,
+        f7,
+        f8,
+        f9,
+        f10,
+        f11,
+        f12,
+        f13,
+        f14,
+        f15,
+        UInt8[0x0a],
+    )
     return res
 end
 
@@ -112,7 +135,7 @@ end
 # For GroundState type
 function ser(counter::UInt64, state::GroundState)::Vector{UInt8}
     c = reinterpret(UInt8, [counter])
-    
+
     id = reinterpret(UInt8, [state.id])
     st = reinterpret(UInt8, [state.elapsed_time])
     pr = reinterpret(UInt8, [state.priority])
@@ -126,34 +149,43 @@ function ser(counter::UInt64, state::GroundState)::Vector{UInt8}
 end
 
 function ser(msg::PlayMessage)::Vector{UInt8}
-   return [msg.message]
+    return [msg.message]
 end
 function ser(msg::RateMessage)::Vector{UInt8}
-   return [msg.message]
+    return [msg.message]
+end
+function ser(msg::PerturbationMessage)::Vector{UInt8}
+    mm = reinterpret(UInt8, [msg.moment_Body])
+    md = reinterpret(UInt8, [msg.moment_duration])
+    fm = reinterpret(UInt8, [msg.force_ECI])
+    fd = reinterpret(UInt8, [msg.force_duration])
+
+    res = vcat(mm, md, fm, fd)
+    return res
 end
 
 # general deserializer for AbstractStates
-function des(::Type{T}, raw::Vector{UInt8})::Tuple{UInt64, T} where T<:AbstractState
+function des(::Type{T}, raw::Vector{UInt8})::Tuple{UInt64,T} where {T<:AbstractState}
     countlen = 8
     c = reinterpret(UInt64, raw[1:countlen])
-    
+
     agg = countlen+1
     fields = []
     for t in T.types
         size = sizeof(t)
-        d = reinterpret(t, raw[agg:agg+size-1])
+        d = reinterpret(t, raw[agg:(agg+size-1)])
         agg += size
         push!(fields, d[1])
     end
     return (c[1], T(fields...))
 end
 
-function desmsg(::Type{T}, raw::Vector{UInt8})::T where T<:ControlMessage
+function desmsg(::Type{T}, raw::Vector{UInt8})::T where {T<:ControlMessage}
     agg = 1
     fields = []
     for t in T.types
         size = sizeof(t)
-        d = reinterpret(t, raw[agg:agg+size-1])
+        d = reinterpret(t, raw[agg:(agg+size-1)])
         agg += size
         push!(fields, d[1])
     end
@@ -170,14 +202,14 @@ function packetize(payload::NetworkMessage, flags::UInt16, counter::UInt64)::Vec
         payload_B = ser(payload)
     end
     payload_len = UInt16(length(payload_B))
-    
+
     res = UInt8[
-        protocol_id, 
-        protocol_ver, 
+        protocol_id,
+        protocol_ver,
         reverse(reinterpret(UInt8, [message_type]))...,
         reverse(reinterpret(UInt8, [flags]))...,
         reverse(reinterpret(UInt8, [payload_len]))...,
-        payload_B...
+        payload_B...,
     ]
     return res
 end
@@ -189,22 +221,22 @@ function behead(data::Vector{UInt8})
     protocol_id = data[1]
     protocol_ver = data[2]
     if protocol_id != 0xab
-        throw(DomainError("protocol ID mismatch! Got "* string(protocol_id)))
+        throw(DomainError("protocol ID mismatch! Got " * string(protocol_id)))
     end
     if protocol_ver != 0x00
         throw(DomainError("protocol version mismatch!"))
     end
-    
-    message_type    = UInt16(UInt16(data[3])<<8 | data[4])
-    flags           = UInt16(UInt16(data[5])<<8 | data[6])
-    len             = UInt16(UInt16(data[7])<<8 | data[8])
-    
+
+    message_type = UInt16(UInt16(data[3])<<8 | data[4])
+    flags = UInt16(UInt16(data[5])<<8 | data[6])
+    len = UInt16(UInt16(data[7])<<8 | data[8])
+
     type = MESSAGE_LOOKUP[message_type]
-    
+
     return type, flags, len
 end
 
-function unpacketize(data::Vector{UInt8}, headless=true)
+function unpacketize(data::Vector{UInt8}, headless = true)
     if !headless
         if length(data) < 8
             throw(BoundsError("data too short to unpack!"))
@@ -212,24 +244,24 @@ function unpacketize(data::Vector{UInt8}, headless=true)
         protocol_id = data[1]
         protocol_ver = data[2]
         if protocol_id != 0xab
-            throw(DomainError("protocol ID mismatch! Got "* string(protocol_id)))
+            throw(DomainError("protocol ID mismatch! Got " * string(protocol_id)))
         end
         if protocol_ver != 0x00
             throw(DomainError("protocol version mismatch!"))
         end
-        
-        message_type    = UInt16(UInt16(data[3])<<8 | data[4])
-        flags           = UInt16(UInt16(data[5])<<8 | data[6])
-        len             = UInt16(UInt16(data[7])<<8 | data[8])
+
+        message_type = UInt16(UInt16(data[3])<<8 | data[4])
+        flags = UInt16(UInt16(data[5])<<8 | data[6])
+        len = UInt16(UInt16(data[7])<<8 | data[8])
         type = MESSAGE_LOOKUP[message_type]
-        payload = data[9:9+len-1]
+        payload = data[9:(9+len-1)]
         return des(type, payload)
     end
-    
+
     # if len > length(data) - 9 - 1
     #     throw(BoundsError("data shorter than claimed!"))
     # end
-    
+
     # later, return the flags + other stuff as well:
-    
+
 end

@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Thanasi Pantazides <thanasipantazides@gmail.com>"]
 
 [deps]
+AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
@@ -24,8 +25,10 @@ SatelliteToolboxTransformations = "6b019ec1-7a1e-4f04-96c7-a9db1ca5514d"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
+AbstractTrees = "0.4.5"
 Aqua = "0.8.14"
 CSV = "0.10.16"
 CairoMakie = "0.15.10"
@@ -45,3 +48,4 @@ SatelliteToolboxTransformations = "1.2.0"
 Serialization = "1.11.0"
 Sockets = "1.11.0"
 StaticArrays = "1.9.18"
+Test = "1.11.0"
