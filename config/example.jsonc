@@ -2,7 +2,7 @@
   "simulation": {
     "timestep": 1.0, // seconds
     "initial": {
-      "time": {"year":2026,"month":5,"day":1,"hour":4,"minute":28,"second":12},
+      "time": {"year":2026,"month":12,"day":21,"hour":4,"minute":28,"second":12},
       "position": [6871e3,0.0,0.0],
       // "velocity": [0.0,3808.3,6596.1],
       // "velocity": [0.0, 4368.68, 6239.12], // 55 deg inc
@@ -10,6 +10,7 @@
       // "velocity": [0.0, 1971.30, 7357.03], // 75 deg inc
       "velocity": [0.0, 531.30,  7598.00], // 85 deg inc
       // "velocity": [0.0, -663.83,  7587.57], // 95 deg inc
+      "angular_velocity": [0.01, 0.001,  0.001],
       "attitude": [[1.0,0.0,0.0], [0.0,1.0,0.0], [0.0,0.0,1.0]],
       "attitude_major": "row", // how to read in "attitude"
       "battery": 151200.0,
