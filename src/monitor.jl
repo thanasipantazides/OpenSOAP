@@ -102,7 +102,7 @@ function show()
     # bind(sock, unixsockname)
     sock = Sockets.connect(unixsockname)
     textureprefix = joinpath("assets")
-    textures = ["map_diffuse.png", "map_pol1.png", "map_pol2.png", "map_marble.png", "map_bathy.png", "map_bw.png", "map_snow.jpeg", "map_veggie.jpeg", "map_tissot.jpg", "map_cities.png"]
+    textures = ["map_diffuse.png", "map_marble.png", "map_bathy.png", "map_snow.jpeg", "map_veggie.jpeg", "map_diffuse_gm.png"] #"map_pol1.png", "map_pol2.png", "map_tissot.jpg", "map_cities.png", ] #"map_bw.png"
     texturek = 1
     texture = Observable(load_earth_texture_to_ecef(joinpath(textureprefix, textures[texturek])))
     X_ECI, Y_ECI, Z_ECI = get_sphere_mesh(texture[])
@@ -140,7 +140,7 @@ function show()
     
     body_mesh_val = get_body_mesh()
     
-    GLMakie.activate!(title="Hello Smallsat")
+    GLMakie.activate!(title="Hello, Greetings, and Welcome.")
     GLMakie.set_theme!(font="OCR-B")
     al = AmbientLight(RGBf(0.4, 0.4, 0.4))
     dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), pos_sun_ECI[])
@@ -190,7 +190,8 @@ function show()
                                 NaN NaN NaN;
                                 0.0 0.0 0.0;
                                 0.0 0.0 1.0]
-    inertial_frame_v = 13*body_frame_v
+    inertial_frame_v = 14*body_frame_v
+    fixed_frame_v = 12*body_frame_v
     body_frame_color = [fill(:red, 3); fill(:green, 3); fill(:blue, 2)]
     inertial_frame_color = [fill(:red, 3); fill(:green, 3); fill(:blue, 2)]
     
@@ -222,6 +223,12 @@ function show()
     inertial_frame = GLMakie.lines!(
         ax,
         inertial_frame_v[:,1], inertial_frame_v[:,2], inertial_frame_v[:,3],
+        color=inertial_frame_color,
+        visible=body_frame_visible
+    )
+    fixed_frame = GLMakie.lines!(
+        ax,
+        fixed_frame_v[:,1], fixed_frame_v[:,2], fixed_frame_v[:,3],
         color=inertial_frame_color,
         visible=body_frame_visible
     )
@@ -462,6 +469,7 @@ function show()
                 q_ECEF_ECI[] = dcm_to_quat(simdata.attitude_ECI_ECEF)
                 notify(q_ECEF_ECI)
                 GLMakie.rotate!(earth_mesh, q_ECEF_ECI[])
+                GLMakie.rotate!(fixed_frame, q_ECEF_ECI[])
                 
             elseif typeof(simdata) === SunState
                 GLMakie.set_directional_light!(
@@ -499,14 +507,14 @@ function show()
                 data[][end] = simdata.net_data / 1e6
                 notify(data)
                 circshift!(rSO3[], -1)
-                rSO3[][end] = residualSO3(simdata.attitude_ECI_Body)
+                rSO3[][end] = residualSO3(simdata.attitude_ECI_Body')
                 notify(rSO3)
                 circshift!(ob_time[], -1)
                 ob_time[][end] = start_time + Dates.Millisecond(1000*simdata.elapsed_time)
                 notify(ob_time)
                 
                 # update attitude
-                q = dcm_to_quat(simdata.attitude_ECI_Body)
+                q = dcm_to_quat(simdata.attitude_ECI_Body')
                 GLMakie.rotate!(body_mesh, q)
                 GLMakie.translate!(body_mesh, pos_ECI[][end])
                 

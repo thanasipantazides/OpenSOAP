@@ -253,7 +253,6 @@ function load_config(d::Dict{String, Any})
     area = Vector{Float64}()
     normal = Vector{Vector{Float64}}()
     for item in d["spacecraft"]["power"]["panels"]
-        println(typeof(item["efficiency"]))
         push!(eff, item["efficiency"])
         push!(area, item["area"])
         push!(normal, item["normal"])
