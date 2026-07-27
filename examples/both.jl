@@ -1,25 +1,28 @@
 using Distributed
-import OpenSOAP
+if nprocs() < 3
+    addprocs(3-nprocs())
+end
 
+println("running with $(nprocs()) workers")
 
+@everywhere import OpenSOAP
 
 function main()
 
-    if nprocs() < 3
-        addprocs(3-nprocs())
+    println("launching core...")
+    fcore = @spawnat workers()[1] OpenSOAP.run()
+    sleep(3)
+    println("launching monitor...")
+    fmon = @spawnat workers()[2] OpenSOAP.show()
+
+    f = fetch(fmon)
+
+    interrupt(fmon.where)
+    sleep(2)
+    interrupt(fcore.where)
+
+    # # sleep(1)
+    if isfile(OpenSOAP.unixsockname)
+        rm(OpenSOAP.unixsockname)
     end
-    
-    println("running with $(nprocs()) workers")
-
-    fmon = @async begin
-        sleep(5) # wait for the core process to start
-        println("launching monitor process")
-        OpenSOAP.show()
-    end
-    
-    println("launching core process")
-    OpenSOAP.run()
-
-
-    # note: with the two processes exchanging blocking like this, things work, but there is a low cap on how fast the sim can run. Around a time gain of 100:1.
 end

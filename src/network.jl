@@ -154,6 +154,9 @@ end
 function ser(msg::RateMessage)::Vector{UInt8}
     return [msg.message]
 end
+function ser(msg::QuitMessage)::Vector{UInt8}
+    return [msg.message]
+end
 function ser(msg::PerturbationMessage)::Vector{UInt8}
     mm = reinterpret(UInt8, [msg.moment_Body])
     md = reinterpret(UInt8, [msg.moment_duration])

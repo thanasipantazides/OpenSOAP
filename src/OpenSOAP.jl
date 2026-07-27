@@ -11,7 +11,7 @@ include("io.jl")
 export      worm,
             cross, uncross, residualSO3, residualso3, dcm_to_quat, r_min_arc, projSO3,
             NetworkMessage, AbstractState, AbstractConfig, AbstractTarget,
-            ControlMessage, PlayMessage, RateMessage, PerturbationMessage,
+            ControlMessage, PlayMessage, RateMessage, QuitMessage, PerturbationMessage,
             PositionState, AttitudeState, EarthState, SatelliteState, 
             SunState, GroundState,
             ModeConfig, TargetConfig, SimConfig, find_config, mode_table,

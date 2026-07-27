@@ -22,7 +22,7 @@ None of the modeled dynamics are state-of-the-art fidelity, but they are good fo
 
 You will need an installation of [Julia](https://julialang.org/).
 
-Clone the repository into a nice place on your computer, go into the director, and launch the Julia REPL:
+Clone the repository into a nice place on your computer, go into the directory, and launch the Julia REPL:
 
 ```console
 $ git clone https://github.com/thanasipantazides/OpenSOAP.git
@@ -52,7 +52,7 @@ julia> main()
 
 You should see a display like the one further up this page. Press the `h` key for a help menu. 
 
-To exit, close the window, then press `ctrl-C` in the Julia REPL a few times. 
+To exit, press `q` in the viewer.
 
 ## To do
 - [ ] swap underlying socket to UDP so there is no locking of sim based on TCP. Note: because of the current Julia implementation of sockets, there is no  
@@ -60,3 +60,4 @@ To exit, close the window, then press `ctrl-C` in the Julia REPL a few times.
 - [ ] ingest complex config. Or maybe a callback-ability for state transition events. or something.
 - [ ] Make it easier to launch and exit.
 - [ ] later: hot reload of config. I.e. a watcher for config file that reloads the spacecraft and target config (but not initial conditions). 
+- [ ] Add labeling control to monitor.

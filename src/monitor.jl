@@ -136,7 +136,18 @@ function show()
     body_frame_visible = Observable(false)
     
     cmd_label = Observable("")
-    helpstring = "Commands:\n- h:\tshow help\n- v:\tverbose\n- e:\tchange earth texture\n- f:\tshow/hide Body frame\n- p:\tchange camera projection\n- k:\tperturb attitude\n- spacebar:\t\tplay/pause\n- left/right:\tslower/faster\n"
+    helpstring = """
+        Commands:
+        - h:\tshow help
+        - v:\tverbose
+        - q:\tquit
+        - e:\tchange earth texture
+        - f:\tshow/hide Body frame
+        - p:\tchange camera projection
+        - k:\tperturb attitude
+        - spacebar:\t\tplay/pause
+        - left/right:\tslower/faster
+        """
     
     body_mesh_val = get_body_mesh()
     
@@ -336,6 +347,7 @@ function show()
     buff = zeros(UInt8, packlen)
     
     play = Ref(UInt8(0x01))
+    do_quit = Ref(false)
     sleep = Ref(UInt8(0x01))
     last_proj = Ref(UInt8(0x00))
     sleepstep = 8
@@ -393,7 +405,7 @@ function show()
             end
             if event.key == Keyboard.k && play[] == 0x01
                 # todo: configure perturbation magnitude and duration elsewhere
-                pert = PerturbationMessage(Vec3d(5e-4*rand(3)), 5, Vec3d(0.0), 1)
+                pert = PerturbationMessage(Vec3d(1e-2*rand(3)), 5, Vec3d(0.0), 1)
                 writeval = packetize(pert, 0x0000, UInt64(0))
                 cmd_label[] = "kicked!"
                 write(sock, writeval)
@@ -437,6 +449,14 @@ function show()
             if event.key == Keyboard.f
                 body_frame_visible[] = !body_frame_visible[]
                 notify(body_frame_visible)
+            end
+            if event.key == Keyboard.q
+                do_quit[] = true
+                cmd_label[] = "exiting..."
+                writeval = packetize(QuitMessage(0x01), 0x0000, UInt64(2))
+                write(sock, writeval)
+                println("> sent command ", writeval, " to server")
+                notify(cmd_label)
             end
         end
     end
@@ -577,6 +597,13 @@ function show()
             # @async GLMakie.reset_limits!(ax_stor)
             @async GLMakie.reset_limits!(ax_power)
             @async GLMakie.reset_limits!(ax_data)
+
+            if do_quit[]
+                println("exiting...")
+                close(sock)
+                GLMakie.closeall()
+                return 1
+            end
             
             if time() - lastratetime > secondly_debug
                 Printf.@printf "rate: %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
@@ -589,7 +616,8 @@ function show()
             if typeof(e) <: InterruptException
                 println("exiting...")
                 close(sock)
-                break
+                GLMakie.closeall()
+                return -1
             else
                 rethrow(e)
                 flush(sock)
@@ -743,7 +771,7 @@ function write_csv(outfile::AbstractString)
     this_line = CSVLine()
 
     met = 0.0
-    while true
+    while !eof(sock)
         try
             
             nbhead = readbytes!(sock, headbuff)

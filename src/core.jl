@@ -28,6 +28,10 @@ mutable struct RateMessage<:ControlMessage
     message::UInt8
 end
 
+mutable struct QuitMessage<:ControlMessage
+    message::UInt8
+end
+
 mutable struct PerturbationMessage<:ControlMessage
     moment_Body::Vec3d
     moment_duration::UInt32 # number of counter steps to sustain
@@ -308,6 +312,7 @@ function run()
     println("connected!")
     
     play = Ref(UInt8(0x01))
+    do_quit = Ref(QuitMessage(0x00))
     playrate = Ref(UInt8(0xff))
     perturbation = Ref(PerturbationMessage(Vec3d(0.0), 0.0, Vec3d(0.0), 0.0))
     # perturb_moment = Ref(Vec3d(0.0))
@@ -317,6 +322,7 @@ function run()
     buff = zeros(UInt8, packlen)
     
     # handle received commands
+    # todo: factor this out of the run() function.
     @async while isopen(sock)
         if !eof(sock)
             # read the header
@@ -342,13 +348,19 @@ function run()
             end
         else
             close(sock)
+            # do_quit[] = true
+            # return
         end
     end
     
-    
     time = sim.start_time
+    
     # run simulation
-    while true
+    while isopen(sock)
+        if do_quit[].message == 0x01
+            close(sock)
+            return 1
+        end
         if play[] == 0x01
             # update all dynamic systems
             step_sim!(sat, earth_state, targets, sim.time_step, time, target_configs, modes, mode_table, sat_config, params; exog=perturbation[])
@@ -363,7 +375,7 @@ function run()
             # sun_data = packetize(sun_state, 0x0000, sim.step_count)
             # write(sock, sun_data)
             
-            for target in targets #groundstations
+            for target in targets
                 t_data = packetize(target, 0x0000, sim.step_count)
                 write(sock, t_data)
             end
@@ -390,5 +402,7 @@ function run()
         
         # print(" "*worm(counter%pwidth, pwidth)*" \r")
     end
+
+    close(sock)
 end
 
