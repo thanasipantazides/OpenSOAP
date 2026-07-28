@@ -204,16 +204,7 @@ function step!(
 )
     sun.elapsed_time += dt
     sun.position_ECI = SatelliteToolboxCelestialBodies.sun_position_mod(t)
-    sun.visible =
-        sun.position_ECI'*sat.position_ECI / norm(sun.position_ECI) /
-        norm(sat.position_ECI) >
-        -sqrt(
-            max(
-                0,
-                1 -
-                (SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS)^2 / norm(sat.position_ECI)^2,
-            ),
-        )
+    set_visibility!(sat, sun, config)
 end
 
 function step!(
@@ -232,14 +223,7 @@ function step!(
             SatelliteToolboxBase.date_to_jd(t),
             eop,
         )*SatelliteToolboxTransformations.geodetic_to_ecef(gs.position_LLA...)
-    # todo: replace hardcoded mask with params dict
-    if (sat.position_ECI - gs.position_ECI)'*gs.position_ECI /
-       norm(sat.position_ECI - gs.position_ECI) / norm(gs.position_ECI) >
-       cos(config.position_cone)
-        gs.visible = true
-    else
-        gs.visible = false
-    end
+    set_visibility!(sat, gs, config)
 end
 
 function step_earth(x::EarthState, dt::Float64, t::Dates.DateTime, params)::EarthState

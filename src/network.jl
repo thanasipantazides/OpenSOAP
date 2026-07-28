@@ -1,5 +1,3 @@
-import InlineStrings
-import Base.reinterpret
 
 # packet structure idea:
 #   protocol byte ID                            [1B]

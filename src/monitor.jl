@@ -1,7 +1,5 @@
-using GLMakie, GeometryBasics, LinearAlgebra
+using GLMakie
 import Makie
-import SatelliteToolboxTransformations
-import Sockets, Serialization
 import Printf, FileIO
 
 function basis()
