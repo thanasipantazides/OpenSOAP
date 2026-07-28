@@ -146,6 +146,7 @@ function show()
         - q:\tquit
         - e:\tchange earth texture
         - f:\tshow/hide Body frame
+        - l:\tshow/hide labels
         - p:\tchange camera projection
         - k:\tperturb attitude
         - spacebar:\t\tplay/pause
