@@ -13,11 +13,13 @@ function main()
     fcore = @spawnat workers()[1] OpenSOAP.run()
     sleep(3)
     println("launching monitor...")
-    fmon = @spawnat workers()[2] OpenSOAP.show()
+    # fmon = @spawnat workers()[2] OpenSOAP.show()
+    OpenSOAP.show()
 
-    f = fetch(fmon)
+    # f = fetch(fmon)
+    f = fetch(fcore)
 
-    interrupt(fmon.where)
+    # interrupt(fmon.where)
     sleep(2)
     interrupt(fcore.where)
 

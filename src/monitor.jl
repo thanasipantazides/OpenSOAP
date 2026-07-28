@@ -4,29 +4,38 @@ import SatelliteToolboxTransformations
 import Sockets, Serialization
 import Printf, FileIO
 
+function basis()
+    return [Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec3d(0.0, 0.0, 1.0)]
+end
+
 function load_earth_texture_to_ecef(path::String)
     texture = FileIO.load(path)
     texture = texture'
-    W_uv = length(texture[:,1])
+    W_uv = length(texture[:, 1])
     texture = circshift(texture, (round(W_uv)/2, 0))
     return texture
 end
 
 function get_sphere_mesh(texture)
-    nθ = length(texture[:,1])
-    nφ = length(texture[1,:])
-    θ = range(0, stop=2π, length=nθ)
-    φ = range(0, stop=π, length=nφ)
+    nθ = length(texture[:, 1])
+    nφ = length(texture[1, :])
+    θ = range(0, stop = 2π, length = nθ)
+    φ = range(0, stop = π, length = nφ)
     mesh_X = zeros(nθ, nφ)
     mesh_Y = zeros(nθ, nφ)
     mesh_Z = zeros(nθ, nφ)
-    for i in 1:nθ
-        for j in 1:nφ
+    for i = 1:nθ
+        for j = 1:nφ
             # a point in the mesh
-            p = SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS*[cos(θ[i])*sin(φ[j]); sin(θ[i])*sin(φ[j]); cos(φ[j])]
-            mesh_X[i,j] = p[1]
-            mesh_Y[i,j] = p[2]
-            mesh_Z[i,j] = p[3]
+            p =
+                SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS*[
+                    cos(θ[i])*sin(φ[j]);
+                    sin(θ[i])*sin(φ[j]);
+                    cos(φ[j])
+                ]
+            mesh_X[i, j] = p[1]
+            mesh_Y[i, j] = p[2]
+            mesh_Z[i, j] = p[3]
         end
     end
     return mesh_X, mesh_Y, mesh_Z
@@ -35,34 +44,39 @@ end
 function test_texture()
     texture = load_earth_texture_to_ecef("assets/map_diffuse.png")
     GLMakie.activate!()
-    nθ = length(texture[:,1])
-    nφ = length(texture[1,:])
-    θ = range(0, stop=2π, length=nθ)
-    φ = range(0, stop=π, length=nφ)
+    nθ = length(texture[:, 1])
+    nφ = length(texture[1, :])
+    θ = range(0, stop = 2π, length = nθ)
+    φ = range(0, stop = π, length = nφ)
     mesh_X = zeros(nθ, nφ)
     mesh_Y = zeros(nθ, nφ)
     mesh_Z = zeros(nθ, nφ)
-    for i in 1:nθ
-        for j in 1:nφ
+    for i = 1:nθ
+        for j = 1:nφ
             # a point in the mesh
-            p = SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS*[cos(θ[i])*sin(φ[j]); sin(θ[i])*sin(φ[j]); cos(φ[j])]
-            mesh_X[i,j] = p[1]
-            mesh_Y[i,j] = p[2]
-            mesh_Z[i,j] = p[3]
+            p =
+                SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS*[
+                    cos(θ[i])*sin(φ[j]);
+                    sin(θ[i])*sin(φ[j]);
+                    cos(φ[j])
+                ]
+            mesh_X[i, j] = p[1]
+            mesh_Y[i, j] = p[2]
+            mesh_Z[i, j] = p[3]
         end
     end
-    f,ax,pl = GLMakie.mesh(mesh_X,mesh_Y,mesh_Z,color=texture, invert_normals=true)
+    f, ax, pl = GLMakie.mesh(mesh_X, mesh_Y, mesh_Z, color = texture, invert_normals = true)
     display(f)
     return f
 end
 
-function get_body_mesh(scale::Float64=0.25)
+function get_body_mesh(scale::Float64 = 0.25)
     bodyscale = scale*6371e3
-    box = Rect3d(bodyscale*Point3f(-0.15,-0.1,-0.05), bodyscale*Vec3f(0.3,0.2,0.1))
+    box = Rect3d(bodyscale*Point3f(-0.15, -0.1, -0.05), bodyscale*Vec3f(0.3, 0.2, 0.1))
     ps = coordinates(box)
     fs = faces(box)
     ns = face_normals(ps, fs)
-    m = GeometryBasics.mesh(ps, fs, normal=ns)
+    m = GeometryBasics.mesh(ps, fs, normal = ns)
     return m
 end
 
@@ -71,10 +85,10 @@ function format_clock(met::Float64, start_time::Dates.DateTime)
     hours = Int(round(met - days*3600*24))÷3600
     minutes = Int(round(met - days*3600*24 - hours*3600))÷60
     seconds = met - days*3600*24 - hours*3600 - minutes*60
-    
+
     utc = start_time + Dates.Second(met)
     utc_s = Dates.format(utc, "dd u YYYY HH:MM:SS.sss")
-    
+
     return Printf.@sprintf "MET: %3u day      %2u:%2u:%06.3f\nUTC:  %s" days hours minutes seconds utc_s
 end
 
@@ -86,7 +100,7 @@ function disable_makie_cam_keyboard!(cam::Makie.Camera3D)
             cam.controls[item] = Observable{Any}(false)
         end
     end
-    
+
     # remember to call update_cam!(lscene.scene, cam) after to apply changes
 end
 
@@ -102,40 +116,29 @@ function show()
     # bind(sock, unixsockname)
     sock = Sockets.connect(unixsockname)
     textureprefix = joinpath("assets")
-    textures = ["map_diffuse.png", "map_marble.png", "map_bathy.png", "map_snow.jpeg", "map_veggie.jpeg", "map_diffuse_gm.png"] #"map_pol1.png", "map_pol2.png", "map_tissot.jpg", "map_cities.png", ] #"map_bw.png"
+    textures = [
+        "map_diffuse.png",
+        "map_marble.png",
+        "map_bathy.png",
+        "map_snow.jpeg",
+        "map_veggie.jpeg",
+        "map_diffuse_gm.png",
+    ] #"map_pol1.png", "map_pol2.png", "map_tissot.jpg", "map_cities.png", ] #"map_bw.png"
     texturek = 1
-    texture = Observable(load_earth_texture_to_ecef(joinpath(textureprefix, textures[texturek])))
+    texture =
+        Observable(load_earth_texture_to_ecef(joinpath(textureprefix, textures[texturek])))
     X_ECI, Y_ECI, Z_ECI = get_sphere_mesh(texture[])
-    
-    sim, sat, sat_config, targets, target_configs, modes, mode_table = handle_new_config(joinpath("config","example.jsonc"))
-    
+
+    body_mesh_val = get_body_mesh()
+
+    sim, sat, sat_config, targets, target_configs, modes, mode_table =
+        handle_new_config(joinpath("config", "example.jsonc"))
+
     mode_table = tabulate(modes)
     target_state_table = tabulate(targets)
     target_config_table = tabulate(target_configs)
-    
-    pointbufflen = 1000
-    obbufflen = 2*10^4
-    start_time = sim.start_time
-    pos_ECI = Observable([Point3d(NaN) for k in 1:pointbufflen])
-    ob_time = Observable([start_time + Dates.Second(k) for k in 1:obbufflen])
-    batt = Observable([NaN for k in 1:obbufflen])
-    stor = Observable([NaN for k in 1:obbufflen])
-    power = Observable([NaN for k in 1:obbufflen])
-    data = Observable([NaN for k in 1:obbufflen])
-    rSO3 = Observable([NaN for k in 1:obbufflen])
-    target_dir_ECI = Observable([Point3d(NaN) for k in 1:2])
-    q_ECEF_ECI = Observable(Makie.Quaternion(0.0,0.0,0.0,1.0))
-    pos_sun_ECI = Observable(Vec3d(0.0))
-    moment_ECI = Observable([Vec3d(NaN) for k in 1:2])
-    angular_velocity_ECI = Observable([Vec3d(NaN) for k in 1:2])
-    met = Observable(Float64(0.0))
-    met_label = lift(met) do l
-        return format_clock(l, start_time)
-    end
-    
-    body_frame_visible = Observable(false)
-    
-    cmd_label = Observable("")
+
+
     helpstring = """
         Commands:
         - h:\tshow help
@@ -148,23 +151,75 @@ function show()
         - spacebar:\t\tplay/pause
         - left/right:\tslower/faster
         """
-    
-    body_mesh_val = get_body_mesh()
-    
-    GLMakie.activate!(title="Hello, Greetings, and Welcome.")
-    GLMakie.set_theme!(font="OCR-B")
+
+    eci_scale = 1.4
+    ecef_scale = 1.2
+    body_scale = 0.1
+    angular_velocity_scale = 30
+    moment_scale = 0.2
+
+    idlecolor = RGBAf(42/255, 133/255, 255/255)
+    gscolor = RGBAf(157/255, 226/255, 107/255)
+    suncolor = RGBAf(255/255, 201/255, 74/255)
+
+    pointbufflen = 1000
+    obbufflen = 2*10^4
+    start_time = sim.start_time
+
+    pos_ECI = Observable([Point3d(NaN) for k = 1:pointbufflen])
+    ob_time = Observable([start_time + Dates.Second(k) for k = 1:obbufflen])
+    batt = Observable([NaN for k = 1:obbufflen])
+    stor = Observable([NaN for k = 1:obbufflen])
+    power = Observable([NaN for k = 1:obbufflen])
+    data = Observable([NaN for k = 1:obbufflen])
+    rSO3 = Observable([NaN for k = 1:obbufflen])
+    target_dir_ECI = Observable([Point3d(NaN) for k = 1:2])
+    q_ECEF_ECI = Observable(Makie.Quaternion(0.0, 0.0, 0.0, 1.0))
+    pos_sun_ECI = Observable(Vec3d(0.0))
+    moment_ECI = Observable([Vec3d(NaN) for k = 1:2])
+    angular_velocity_ECI = Observable([Vec3d(NaN) for k = 1:2])
+    met = Observable(Float64(0.0))
+    met_label = lift(met) do l
+        return format_clock(l, start_time)
+    end
+
+    body_frame_visible = Observable(false)
+    axes_label_visible = Observable(false)
+
+    cmd_label = Observable("")
+
+    GLMakie.activate!(title = "Hello, Greetings, and Welcome.")
+    GLMakie.set_theme!(font = "OCR-B")
     al = AmbientLight(RGBf(0.4, 0.4, 0.4))
     dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), pos_sun_ECI[])
-    fig = GLMakie.Figure(size=(730, 580))
+    fig = GLMakie.Figure(size = (730, 580))
     display(fig)
-    ax = LScene(fig[1:5,1:3], show_axis=false, scenekw=(lights=[al,dl],), tellwidth=false)
-    ax_batt = Axis(fig[1,4], ylabel="battery [%]", ylabelfont="OCR-B", tellwidth=false)
+    ax = LScene(
+        fig[1:5, 1:3],
+        show_axis = false,
+        scenekw = (lights = [al, dl],),
+        tellwidth = false,
+    )
+    ax_batt =
+        Axis(fig[1, 4], ylabel = "battery [%]", ylabelfont = "OCR-B", tellwidth = false)
     ylims!(ax_batt, 0.0, 102)
-    ax_power = Axis(fig[2,4], ylabel="power [W]", ylabelfont="OCR-B", tellwidth=false)
-    ax_stor = Axis(fig[3,4], ylabel="onboard\ndata [%]", ylabelfont="OCR-B", tellwidth=false)
+    ax_power =
+        Axis(fig[2, 4], ylabel = "power [W]", ylabelfont = "OCR-B", tellwidth = false)
+    ax_stor = Axis(
+        fig[3, 4],
+        ylabel = "onboard\ndata [%]",
+        ylabelfont = "OCR-B",
+        tellwidth = false,
+    )
     ylims!(ax_stor, 0.0, 102)
-    ax_data = Axis(fig[4,4], ylabel="datarate\n[Mbps]", ylabelfont="OCR-B", tellwidth=false)
-    ax_dbug = Axis(fig[5,4], ylabel="SO(3) res.", ylabelfont="OCR-B", tellwidth=false)
+    ax_data = Axis(
+        fig[4, 4],
+        ylabel = "datarate\n[Mbps]",
+        ylabelfont = "OCR-B",
+        tellwidth = false,
+    )
+    ax_dbug =
+        Axis(fig[5, 4], ylabel = "SO(3) res.", ylabelfont = "OCR-B", tellwidth = false)
     # hidedecorations!(ob)
     hidespines!(ax_batt)
     hidespines!(ax_power)
@@ -172,203 +227,195 @@ function show()
     hidespines!(ax_data)
     hidespines!(ax_dbug)
     linkxaxes!(ax_batt, ax_power, ax_stor, ax_data, ax_dbug)
-    
-    idlecolor = RGBAf(42/255, 133/255, 255/255)
-    gscolor = RGBAf(157/255, 226/255, 107/255)
-    suncolor = RGBAf(255/255, 201/255, 74/255)
-    
-    tmp_modecolor = Dict{UInt16, RGBAf}(
-        0x0003 => gscolor,
-        0x0002 => suncolor,
-        0x0001 => idlecolor
-    )
-    tmp_modename = Dict{UInt16, String}(
-        0x0003 => "groundstation",
-        0x0002 => "sun",
-        0x0001 => "idle"
-    )
-    
+
     tailcolor = Observable(suncolor)
     debuginfo = Observable(rich("."))
     configfile = Observable("default")
-    debugvisible = Observable(true) # todo: create a ControlMessage to enable/disable this
-    
-    body_frame_v = 0.1*6371e3*[ 0.0 0.0 0.0;
-                                1.0 0.0 0.0;
-                                NaN NaN NaN;
-                                0.0 0.0 0.0;
-                                0.0 1.0 0.0;
-                                NaN NaN NaN;
-                                0.0 0.0 0.0;
-                                0.0 0.0 1.0]
-    inertial_frame_v = 14*body_frame_v
-    fixed_frame_v = 12*body_frame_v
+    debugvisible = Observable(true)
+
+    body_frame_v =
+        body_scale*6371e3*[
+            0.0 0.0 0.0;
+            1.0 0.0 0.0;
+            NaN NaN NaN;
+            0.0 0.0 0.0;
+            0.0 1.0 0.0;
+            NaN NaN NaN;
+            0.0 0.0 0.0;
+            0.0 0.0 1.0
+        ]
+
+    inertial_frame_v = 10*eci_scale*body_frame_v
+    fixed_frame_v = 10*ecef_scale*body_frame_v
     body_frame_color = [fill(:red, 3); fill(:green, 3); fill(:blue, 2)]
     inertial_frame_color = [fill(:red, 3); fill(:green, 3); fill(:blue, 2)]
-    
-    lines!(ax, pos_ECI, color=tailcolor, linewidth=2)
-    lines!(ax, target_dir_ECI, color=tailcolor, linewidth=1)
-    lines!(ax, moment_ECI, color=:black, linewidth=2)
-    lines!(ax, angular_velocity_ECI, color=:purple, linewidth=1)
+
+    lines!(ax, pos_ECI, color = tailcolor, linewidth = 2)
+    lines!(ax, target_dir_ECI, color = tailcolor, linewidth = 1)
+    lines!(ax, moment_ECI, color = :black, linewidth = 2)
+    lines!(ax, angular_velocity_ECI, color = :purple, linewidth = 1)
     earth_mesh = GLMakie.surface!(
-        ax, 
-        X_ECI, Y_ECI, Z_ECI,
-        color=texture,
-        diffuse=Vec3f(0.6),
-        specular=Vec3f(0.1),
-        invert_normals=true
+        ax,
+        X_ECI,
+        Y_ECI,
+        Z_ECI,
+        color = texture,
+        diffuse = Vec3f(0.6),
+        specular = Vec3f(0.1),
+        invert_normals = true,
     )
     body_frame = GLMakie.lines!(
         ax,
-        body_frame_v[:,1], body_frame_v[:,2], body_frame_v[:,3],
-        color=body_frame_color,
-        visible=body_frame_visible
+        body_frame_v[:, 1],
+        body_frame_v[:, 2],
+        body_frame_v[:, 3],
+        color = body_frame_color,
+        visible = body_frame_visible,
     )
     body_mesh = GLMakie.mesh!(
         ax,
         body_mesh_val,
-        diffuse=Vec3f(0.7),
-        specular=Vec3f(0.3),
-        color=:grey
+        diffuse = Vec3f(0.7),
+        specular = Vec3f(0.3),
+        color = :grey,
     )
     inertial_frame = GLMakie.lines!(
         ax,
-        inertial_frame_v[:,1], inertial_frame_v[:,2], inertial_frame_v[:,3],
-        color=inertial_frame_color,
-        visible=body_frame_visible
+        inertial_frame_v[:, 1],
+        inertial_frame_v[:, 2],
+        inertial_frame_v[:, 3],
+        color = inertial_frame_color,
+        visible = body_frame_visible,
     )
     fixed_frame = GLMakie.lines!(
         ax,
-        fixed_frame_v[:,1], fixed_frame_v[:,2], fixed_frame_v[:,3],
-        color=inertial_frame_color,
-        visible=body_frame_visible
+        fixed_frame_v[:, 1],
+        fixed_frame_v[:, 2],
+        fixed_frame_v[:, 3],
+        color = inertial_frame_color,
+        visible = body_frame_visible,
     )
     # C_ECI_ECEF0 = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/3600/24, eops)
     gs_pts = Observable([Point3d(NaN)])
     gs_label_pts = Observable([Point3d(NaN)])
     gs_labels = Observable(["."])
-    gs_col = Observable([RGBAf(0.0,0.0,0.0,0.0)])
-    gs_dict = Dict{UInt16, GroundState}()
-    
-    gs_scatter = GLMakie.meshscatter!(
-        ax,
-        gs_pts,
-        color=gs_col,
-        markersize=0.03*6371e3
-    )
-    
+    gs_col = Observable([RGBAf(0.0, 0.0, 0.0, 0.0)])
+    gs_dict = Dict{UInt16,GroundState}()
+
+    eci_label_pts = 1.1*inertial_frame_v
+    eci_labels =
+        [rich("X", subscript("I")), rich("Y", subscript("I")), rich("Z", subscript("I"))]
+    ecef_label_pts = 1.1*fixed_frame_v
+    ecef_labels =
+        [rich("X", subscript("F")), rich("Y", subscript("F")), rich("Z", subscript("F"))]
+
+    gs_scatter = GLMakie.meshscatter!(ax, gs_pts, color = gs_col, markersize = 0.03*6371e3)
+
     gs_names = GLMakie.text!(
-        ax, 
+        ax,
         gs_label_pts,
-        text=gs_labels,
-        font="OCR-B",
-        fontsize=10.0,
-        align=(:center, :center)
+        text = gs_labels,
+        font = "OCR-B",
+        fontsize = 10.0,
+        align = (:center, :center),
+        visible = axes_label_visible,
     )
+    eci_names = GLMakie.text!(
+        ax,
+        6371e3*eci_scale*1.1*basis(),
+        text = eci_labels,
+        font = "OCR-B",
+        fontsize = 10.0,
+        align = (:center, :center),
+        visible = axes_label_visible,
+    )
+    ecef_names = GLMakie.text!(
+        ax,
+        6371e3*ecef_scale*1.1*basis(),
+        text = ecef_labels,
+        font = "OCR-B",
+        fontsize = 10.0,
+        align = (:center, :center),
+        visible = axes_label_visible,
+    )
+
     clock = text!(
-        ax, 
-        0,1, 
-        text=met_label, 
-        align=(:left, :top), 
-        space=:relative,
-        font="OCR-B"
+        ax,
+        0,
+        1,
+        text = met_label,
+        align = (:left, :top),
+        space = :relative,
+        font = "OCR-B",
     )
     cmd = text!(
         ax,
-        0,0,
-        text=cmd_label,
-        align=(:left, :bottom),
-        space=:relative,
-        font="OCR-B",
-        fontsize=10.0
+        0,
+        0,
+        text = cmd_label,
+        align = (:left, :bottom),
+        space = :relative,
+        font = "OCR-B",
+        fontsize = 10.0,
     )
     dbg = text!(
         ax,
-        1,0,
-        text=debuginfo,
-        align=(:right,:bottom),
-        space=:relative,
-        font="OCR-B",
-        fontsize=10.0,
+        1,
+        0,
+        text = debuginfo,
+        align = (:right, :bottom),
+        space = :relative,
+        font = "OCR-B",
+        fontsize = 10.0,
         # glowcolor=tailcolor,
         # glowwidth=1.0,
-        visible=debugvisible
+        visible = debugvisible,
     )
-    
-    batt_lines = lines!(
-        ax_batt,
-        ob_time,
-        batt,
-        color=:black,
-        linewidth=1
-    )
-    stor_lines = lines!(
-        ax_stor,
-        ob_time,
-        stor,
-        color=:black,
-        linewidth=1
-    )
-    power_lines = lines!(
-        ax_power,
-        ob_time,
-        power,
-        color=:black,
-        linewidth=1
-    )
-    data_lines = lines!(
-        ax_data,
-        ob_time,
-        data,
-        color=:black,
-        linewidth=1
-    )
-    rSO3_lines = lines!(
-        ax_dbug,
-        ob_time,
-        rSO3,
-        color=:black,
-        linewidth=1
-    )
-    
+
+    batt_lines = lines!(ax_batt, ob_time, batt, color = :black, linewidth = 1)
+    stor_lines = lines!(ax_stor, ob_time, stor, color = :black, linewidth = 1)
+    power_lines = lines!(ax_power, ob_time, power, color = :black, linewidth = 1)
+    data_lines = lines!(ax_data, ob_time, data, color = :black, linewidth = 1)
+    rSO3_lines = lines!(ax_dbug, ob_time, rSO3, color = :black, linewidth = 1)
+
     # println("server: ", server)
     # sock = Sockets.accept(server)
     println("socket: ", sock)
-    
+
     nrate = 100_000
     secondly_debug = 2.0
     bytecount = 0
     last_met = 0.0
     lastratetime = time()
-    
+
     packlen = length(packetize(SatelliteState(), 0x0000, UInt64(0)))
     packlen = 1
     headbuff = zeros(UInt8, 8)
     buff = zeros(UInt8, packlen)
-    
+
     play = Ref(UInt8(0x01))
     do_quit = Ref(false)
     sleep = Ref(UInt8(0x01))
     last_proj = Ref(UInt8(0x00))
     sleepstep = 8
     # play = 0x01
-    
+
     disable_makie_cam_keyboard!(cameracontrols(ax.scene))
-    
+
     # handle file drag/drop
     on(events(ax).dropped_files) do drop
         for file in drop
             if occursin(".json", file)
                 configfile[] = file
                 notify(configfile)
-                
+
                 res = handle_new_config(configfile[])
                 println(res)
                 return
             end
         end
     end
-    
+
     # handle keyboard input:
     on(events(ax).keyboardbutton) do event
         if event.action == Keyboard.press || event.action == Keyboard.repeat
@@ -421,15 +468,22 @@ function show()
             end
             if event.key == Keyboard.e
                 texturek = mod(texturek, length(textures)) + 1
-                texture[] = load_earth_texture_to_ecef(joinpath(textureprefix, textures[texturek]))
+                texture[] =
+                    load_earth_texture_to_ecef(joinpath(textureprefix, textures[texturek]))
                 notify(texture)
                 # return Consume(true)
+            end
+            if event.key == Keyboard.l
+                if body_frame_visible[]
+                    axes_label_visible[] = !axes_label_visible[]
+                    notify(axes_label_visible)
+                end
             end
             if event.key == Keyboard.p
                 if last_proj[] == 0x00
                     cam = cameracontrols(ax.scene)
                     cam.settings.projectiontype=Makie.Orthographic
-                    update_cam!(ax.scene, cam) 
+                    update_cam!(ax.scene, cam)
                     last_proj[] = 0x01
                     cmd_label[] = "projection: orthographic"
                     notify(cmd_label)
@@ -449,6 +503,10 @@ function show()
             if event.key == Keyboard.f
                 body_frame_visible[] = !body_frame_visible[]
                 notify(body_frame_visible)
+                if !body_frame_visible[] && axes_label_visible[]
+                    axes_label_visible[] = false
+                    notify(axes_label_visible)
+                end
             end
             if event.key == Keyboard.q
                 do_quit[] = true
@@ -460,60 +518,61 @@ function show()
             end
         end
     end
-    
+
     while true
         try
             nbhead = readbytes!(sock, headbuff)
             type, flags, len = behead(headbuff)
-            
+
             buff = zeros(UInt8, len)
             nbdata = readbytes!(sock, buff)
             count, simdata = des(type, buff)
-            
+
             # println(typeof(simdata))
-            
+
             if typeof(simdata) === PositionState # unused
                 circshift!(pos_ECI[], -1)
                 pos_ECI[][end] = Point3d(simdata.position_ECI)
                 notify(pos_ECI)
-                
+
                 # update mission clock
                 met[] = simdata.elapsed_time
                 notify(met)
-                
+
             elseif typeof(simdata) === AttitudeState # unused
-                # GLMakie.rotate!(body_mesh, dcm_to_quat(simdata.attitude_ECI_Body'))
-                # GLMakie.translate!(body_mesh, pos_ECI[][end])
-                
+            # GLMakie.rotate!(body_mesh, dcm_to_quat(simdata.attitude_ECI_Body'))
+            # GLMakie.translate!(body_mesh, pos_ECI[][end])
+
             elseif typeof(simdata) === EarthState
                 q_ECEF_ECI[] = dcm_to_quat(simdata.attitude_ECI_ECEF)
                 notify(q_ECEF_ECI)
                 GLMakie.rotate!(earth_mesh, q_ECEF_ECI[])
                 GLMakie.rotate!(fixed_frame, q_ECEF_ECI[])
-                
+                GLMakie.rotate!(ecef_names, q_ECEF_ECI[])
+
             elseif typeof(simdata) === SunState
                 GLMakie.set_directional_light!(
-                    ax, 
-                    color=RGBf(243/255, 241/255, 218/255), 
-                    direction=-Vec3d(simdata.position_ECI)
+                    ax,
+                    color = RGBf(243/255, 241/255, 218/255),
+                    direction = -Vec3d(simdata.position_ECI),
                 )
                 target_state_table[simdata.id] = simdata
-                
+
             elseif typeof(simdata) === GroundState
                 gs_dict[simdata.id] = simdata
                 target_state_table[simdata.id] = simdata
                 # met[] = simdata.elapsed_time
-                
+
             elseif typeof(simdata) === SatelliteState
                 # update mission clock
                 met[] = simdata.elapsed_time
                 notify(met)
-                
+
                 # update position
                 circshift!(pos_ECI[], -1)
                 pos_ECI[][end] = Point3d(simdata.position_ECI)
                 notify(pos_ECI)
-                
+
                 circshift!(batt[], -1)
                 batt[][end] = simdata.battery_level / sat_config.power_battery_max * 100
                 notify(batt)
@@ -532,67 +591,95 @@ function show()
                 circshift!(ob_time[], -1)
                 ob_time[][end] = start_time + Dates.Millisecond(1000*simdata.elapsed_time)
                 notify(ob_time)
-                
+
                 # update attitude
                 q = dcm_to_quat(simdata.attitude_ECI_Body')
                 GLMakie.rotate!(body_mesh, q)
                 GLMakie.translate!(body_mesh, pos_ECI[][end])
-                
+
                 GLMakie.rotate!(body_frame, q)
                 GLMakie.translate!(body_frame, pos_ECI[][end])
-                
+
                 # update color and target direction
                 mode_conf = mode_table[simdata.mode]
-                # tailcolor[] = tmp_modecolor[simdata.mode]
                 tailcolor[] = mode_conf.color
-                # tailcolor[] = :black
-                # todo: rework with lookups to targets
-                
+
                 if simdata.target == typemax(IDType)
                     target_dir_ECI[] = [Point3d(NaN), Point3d(NaN)]
                 elseif isa(target_state_table[simdata.target], SunState)
-                    target_dir_ECI[] = [simdata.position_ECI, simdata.position_ECI + 0.33*6371e3*normalize(target_state_table[simdata.target].position_ECI - simdata.position_ECI)]
+                    target_dir_ECI[] = [
+                        simdata.position_ECI,
+                        simdata.position_ECI +
+                        0.33*6371e3*normalize(
+                            target_state_table[simdata.target].position_ECI -
+                            simdata.position_ECI,
+                        ),
+                    ]
                 elseif isa(target_state_table[simdata.target], GroundState)
-                    target_dir_ECI[] = [simdata.position_ECI, target_state_table[simdata.target].position_ECI]
+                    target_dir_ECI[] = [
+                        simdata.position_ECI,
+                        target_state_table[simdata.target].position_ECI,
+                    ]
                 else
                     println("unidentified target type: ", typeof(mode_conf.target_type))
                 end
 
-                angular_velocity_ECI[] = [simdata.position_ECI, simdata.position_ECI + 5e1*6371e3*simdata.angular_velocity_ECI_Body]
-                moment_ECI[] = [simdata.position_ECI, simdata.position_ECI + 0.2*6371e3*normalize(simdata.attitude_ECI_Body*simdata.net_moment_Body)]
-                
+                angular_velocity_ECI[] = [
+                    simdata.position_ECI,
+                    simdata.position_ECI +
+                    angular_velocity_scale*6371e3*simdata.angular_velocity_ECI_Body,
+                ]
+                moment_ECI[] = [
+                    simdata.position_ECI,
+                    simdata.position_ECI +
+                    moment_scale*6371e3*normalize(
+                        simdata.attitude_ECI_Body*simdata.net_moment_Body,
+                    ),
+                ]
+
                 notify(tailcolor)
                 notify(target_dir_ECI)
                 notify(angular_velocity_ECI)
                 notify(moment_ECI)
-                
-                # debuginfo[] = rich("target: ", rich(tmp_modename[simdata.mode], color=tmp_modecolor[simdata.mode]))
-                target_name = (simdata.target == typemax(IDType)) ? "" : typeof(target_state_table[simdata.target])
-                
+
+                target_name =
+                    (simdata.target == typemax(IDType)) ? "" :
+                    typeof(target_state_table[simdata.target])
+
                 debuginfo[] = rich(
-                    "mode:   ", rich(String(Printf.@sprintf "%30s" mode_conf.name), "\n",  color=tailcolor[]),
-                    "target: ", rich(String(Printf.@sprintf "%30s" string(target_name)), "\n"),
-                    "config: ", rich(String(Printf.@sprintf "%30s" configfile[]))
+                    "mode:   ",
+                    rich(
+                        String(Printf.@sprintf "%30s" mode_conf.name),
+                        "\n",
+                        color = tailcolor[],
+                    ),
+                    "target: ",
+                    rich(String(Printf.@sprintf "%30s" string(target_name)), "\n"),
+                    "config: ",
+                    rich(String(Printf.@sprintf "%30s" configfile[])),
                 )
-                
+
                 # debuginfo[] = rich("target: ", "nothin")
                 notify(debuginfo)
             else
                 println("unknown message type")
             end
-            
+
             # update all groundstations
             gs_pts[] = [gs_dict[key].position_ECI for key in keys(gs_dict)]
             notify(gs_pts)
             gs_label_pts[] = [1.1*gs_dict[key].position_ECI for key in keys(gs_dict)]
             notify(gs_label_pts)
-            gs_labels[] = [string(find_config(gs_dict[key], target_configs).name) for key in keys(gs_dict)]
+            gs_labels[] = [
+                string(find_config(gs_dict[key], target_configs).name) for
+                key in keys(gs_dict)
+            ]
             notify(gs_labels)
             gs_col[] = [gs_dict[key].visible ? gscolor : idlecolor for key in keys(gs_dict)]
             notify(gs_col)
-            
+
             bytecount += len + 8
-            
+
             # @async GLMakie.reset_limits!(ax_batt)
             # @async GLMakie.reset_limits!(ax_stor)
             @async GLMakie.reset_limits!(ax_power)
@@ -604,10 +691,12 @@ function show()
                 GLMakie.closeall()
                 return 1
             end
-            
+
             if time() - lastratetime > secondly_debug
                 Printf.@printf "rate: %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
-                Printf.@printf "time gain: %u:1 \n" Int64(round((met[] - last_met)/(time() - lastratetime)))
+                Printf.@printf "time gain: %u:1 \n" Int64(
+                    round((met[] - last_met)/(time() - lastratetime)),
+                )
                 last_met = met[]
                 lastratetime = time()
                 bytecount = 0
@@ -655,7 +744,19 @@ mutable struct CSVLine
     target::IDType
 end
 function CSVLine()
-    return CSVLine(Dates.DateTime(0), 0.0,0.0, 0x0, Vec3d(NaN), Vec3d(NaN), Mat3d(fill(NaN, (3,3))), 0.0, 0.0, typemax(IDType), typemin(IDType))
+    return CSVLine(
+        Dates.DateTime(0),
+        0.0,
+        0.0,
+        0x0,
+        Vec3d(NaN),
+        Vec3d(NaN),
+        Mat3d(fill(NaN, (3, 3))),
+        0.0,
+        0.0,
+        typemax(IDType),
+        typemin(IDType),
+    )
 end
 function update!(line::CSVLine, sat::SatelliteState)
     line.met = sat.elapsed_time
@@ -667,19 +768,19 @@ function update!(line::CSVLine, sat::SatelliteState)
     line.mode = sat.mode
     line.target = sat.target
 end
-function iscomplete(line::CSVLine) 
+function iscomplete(line::CSVLine)
     emptyl = CSVLine()
-    if line.utc != emptyl.utc && 
-        line.met != emptyl.met &&
-        line.t != emptyl.t &&
-        line.count != emptyl.count &&
-        any(line.pos .!= emptyl.pos) &&
-        any(line.vel .!= emptyl.vel) &&
-        any(line.att .!= emptyl.att) &&
-        line.batt != emptyl.batt &&
-        line.stor != emptyl.stor &&
-        line.mode != emptyl.mode &&
-        line.target != emptyl.target
+    if line.utc != emptyl.utc &&
+       line.met != emptyl.met &&
+       line.t != emptyl.t &&
+       line.count != emptyl.count &&
+       any(line.pos .!= emptyl.pos) &&
+       any(line.vel .!= emptyl.vel) &&
+       any(line.att .!= emptyl.att) &&
+       line.batt != emptyl.batt &&
+       line.stor != emptyl.stor &&
+       line.mode != emptyl.mode &&
+       line.target != emptyl.target
         return true
     else
         return false
@@ -709,42 +810,43 @@ function write_csv(outfile::AbstractString)
     sock = Sockets.connect(unixsockname)
 
     outf = open(outfile, "a")
-    
-    sim, sat, sat_config, targets, target_configs, modes, mode_table = handle_new_config(joinpath("config","example.jsonc"))
-    
+
+    sim, sat, sat_config, targets, target_configs, modes, mode_table =
+        handle_new_config(joinpath("config", "example.jsonc"))
+
     mode_table = tabulate(modes)
     target_state_table = tabulate(targets)
     target_config_table = tabulate(target_configs)
-    
+
     start_time = sim.start_time
     # met = Observable(Float64(0.0))
     # met_label = lift(met) do l
     #     return format_clock(l, start_time)
     # end
-    
-    
+
+
     # println("server: ", server)
     # sock = Sockets.accept(server)
     println("socket: ", sock)
-    
+
     nrate = 100_000
     secondly_debug = 2.0
     bytecount = 0
     last_met = 0.0
     lastratetime = time()
-    
+
     packlen = length(packetize(SatelliteState(), 0x0000, UInt64(0)))
     packlen = 1
     headbuff = zeros(UInt8, 8)
     buff = zeros(UInt8, packlen)
-    
+
     play = Ref(UInt8(0x01))
     sleep = Ref(UInt8(0xff))
     last_proj = Ref(UInt8(0x00))
     sleepstep = 8
-    
+
     # handle file drag/drop
-    
+
     # handle keyboard input:
     # on(events(ax).keyboardbutton) do event
     #     if event.action == Keyboard.press || event.action == Keyboard.repeat
@@ -773,27 +875,27 @@ function write_csv(outfile::AbstractString)
     met = 0.0
     while !eof(sock)
         try
-            
+
             nbhead = readbytes!(sock, headbuff)
             type, flags, len = behead(headbuff)
-            
+
             buff = zeros(UInt8, len)
             nbdata = readbytes!(sock, buff)
             this_count, simdata = des(type, buff)
-            
+
             if typeof(simdata) === EarthState
                 # q_ECEF_ECI[] = dcm_to_quat(simdata.attitude_ECI_ECEF)
                 # notify(q_ECEF_ECI)
                 # GLMakie.rotate!(earth_mesh, q_ECEF_ECI[])
-                
+
             elseif typeof(simdata) === SunState
                 target_state_table[simdata.id] = simdata
-                
+
             elseif typeof(simdata) === GroundState
                 # gs_dict[simdata.id] = simdata
                 target_state_table[simdata.id] = simdata
                 # met[] = simdata.elapsed_time
-                
+
             elseif typeof(simdata) === SatelliteState
                 # update mission clock
                 update!(this_line, simdata)
@@ -812,13 +914,17 @@ function write_csv(outfile::AbstractString)
                 # clear this_line
                 this_line = CSVLine()
             end
-            
+
             bytecount += len + 8
-            
+
             if time() - lastratetime > secondly_debug
                 Printf.@printf "\nstep, MET: %u, %.2f days\n" this_count met/3600/24
-                Printf.@printf "rate:      %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
-                Printf.@printf "time gain: %u:1 \n" Int64(round((met - last_met)/(time() - lastratetime)))
+                Printf.@printf "rate:      %0.3f MB/s\n" 1e-6*bytecount/(
+                    time() - lastratetime
+                )
+                Printf.@printf "time gain: %u:1 \n" Int64(
+                    round((met - last_met)/(time() - lastratetime)),
+                )
                 Printf.@printf "file size: %u MB\n" Int64(round(stat(outfile).size/1e6))
                 last_met = met
                 lastratetime = time()
