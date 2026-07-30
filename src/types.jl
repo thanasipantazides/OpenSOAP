@@ -1,16 +1,34 @@
 # the "*State" structs should be dynamic. 
 # All static config variables should be stored elsewhere.
 
+"""
+    NetworkMessage
+
+An abstract supertype for types that can be serialized to the network.
+"""
 abstract type NetworkMessage end
 
+"""
+    ControlMessage<:NetworkMessage
+
+An abstract type used for controlling the simulation speed or execution.
+"""
 abstract type ControlMessage<:NetworkMessage end
 
-# control pausing/playing the core simulation
+"""
+    PlayMessage<:ControlMessage
+
+A message used to pause or play the simulation. A value of 0x00 is paused.
+"""
 mutable struct PlayMessage<:ControlMessage
     message::UInt8
 end
 
-# control the run rate of the core simulation
+"""
+    RateMessage<:ControlMessage
+
+A message used to speed up or slow down the simulation.
+"""
 mutable struct RateMessage<:ControlMessage
     message::UInt8
 end
@@ -33,6 +51,8 @@ abstract type AbstractState<:NetworkMessage end
 # dynamic configuration of something that the mission wants to look at
 abstract type AbstractTarget<:AbstractState end
 
+abstract type AbstractConstraint<:NetworkMessage end
+
 # server-side, the table of modes can live in params.
 # But! want a way to construct the mode table via sockets.
 struct ModeConfig<:AbstractConfig
@@ -40,6 +60,7 @@ struct ModeConfig<:AbstractConfig
     name::InlineStrings.String63    # todo: method for reinterpret on .String63 that actually works
     # target_type::DataType
     target_ids::Vector{IDType}      # lookup TargetConfig by ID.
+    constraint_ids::Vector{IDType}  # lookup <:AbstractConstraint by ID.
     priority::IDType                # low value => high priority; high value => low priority
     color::Makie.RGBAf
     power_consumption::Float64
@@ -55,6 +76,21 @@ struct TargetConfig<:AbstractConfig
     data_consumption::Float64
     position_cone::Float64  # must contain the spacecraft to get the target
     pointing_cone::Float64  # spacecraft sensor must put target inside this cone
+end
+
+struct MagneticFieldConfig<:AbstractConfig
+    id::IDType
+    name::InlineStrings.String63
+    dynamic_id::IDType
+    normalization::UInt8
+    model_order::UInt8
+end
+
+struct LLAConstraint<:AbstractConstraint
+    id::IDType
+    lat::Point2d
+    lon::Point2d
+    alt::Point2d
 end
 
 @kwdef struct SatelliteConfig<:AbstractConfig
@@ -181,6 +217,16 @@ mutable struct GroundState<:AbstractTarget
     selected::Bool
 end
 
+mutable struct MagneticFieldState<:AbstractTarget
+    const id::IDType
+    elapsed_time::Float64
+
+    direction_ECI::Vec3d
+    visible::Bool
+    available::Bool
+    selected::Bool
+end
+
 function +(a::PositionState, b::PositionState)
     if a.elapsed_time != b.elapsed_time
         error("can only add States with the same time")
@@ -211,4 +257,14 @@ end
 function *(c::Real, a::AttitudeState)
     # linear only in angular rate
     return AttitudeState(a.elapsed_time, c*a.angular_velocity_ECI_Body, a.attitude_ECI_Body)
+end
+
+function lookup_igrf_normalization(value::AbstractString)::UInt8
+    d = Dict{String,UInt8}("none" => 0x00, "nadir" => 0x01, "zenith" => 0x02)
+    if value in keys(d)
+        return d[value]
+    else
+        @warn "key $value not a valid IGRF normalization"
+        return d["none"]
+    end
 end

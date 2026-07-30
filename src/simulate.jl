@@ -455,8 +455,8 @@ function set_power_data!(
     params,
 )
     sun = targets[findfirst(x -> isa(x, SunState), targets)]
-
-    mode_conf = filter(m -> m.id == sat.mode, modes)[1] # todo: add arg modes::Dict{IDType, ModeConfig} to use for lookup.
+    # todo: add arg modes::Dict{IDType, ModeConfig} to use for lookup.
+    mode_conf = filter(m -> m.id == sat.mode, modes)[1]
     # mode_conf = params["modes"][sat.mode] 
     power_out = mode_conf.power_consumption
     data_in = mode_conf.data_production

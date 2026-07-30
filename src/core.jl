@@ -1,9 +1,9 @@
 # global const unixsock"tname = "127.0.0.1"
 
-function run()
+function run(; config_path::AbstractString = joinpath("config", "example.jsonc"))
 
     sim, sat, sat_config, targets, target_configs, modes, mode_table =
-        load_config(Dict(load_jsonc(joinpath("config", "example.jsonc"))))
+        load_config(Dict(load_jsonc(config_path)))
 
     # return targets, target_configs
 

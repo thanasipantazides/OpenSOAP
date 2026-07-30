@@ -4,7 +4,8 @@ import Sockets
 import InlineStrings
 using GeometryBasics
 import Dates
-import SatelliteToolboxTransformations, SatelliteToolboxBase, SatelliteToolboxCelestialBodies
+import SatelliteToolboxTransformations,
+    SatelliteToolboxBase, SatelliteToolboxCelestialBodies
 import Base: +, *, @kwdef, reinterpret
 import Makie
 

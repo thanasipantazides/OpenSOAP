@@ -108,7 +108,7 @@ function handle_new_config(path::AbstractString)
     return res
 end
 
-function show()
+function show(; config_path::AbstractString = joinpath("config", "example.jsonc"))
     # server = Sockets.listen(unixsockname)
     sock = Sockets.UDPSocket()
     # bind(sock, unixsockname)
@@ -130,7 +130,7 @@ function show()
     body_mesh_val = get_body_mesh()
 
     sim, sat, sat_config, targets, target_configs, modes, mode_table =
-        handle_new_config(joinpath("config", "example.jsonc"))
+        handle_new_config(config_path)
 
     mode_table = tabulate(modes)
     target_state_table = tabulate(targets)
@@ -229,7 +229,7 @@ function show()
 
     tailcolor = Observable(suncolor)
     debuginfo = Observable(rich("."))
-    configfile = Observable("default")
+    configfilename = Observable("default")
     debugvisible = Observable(true)
 
     body_frame_v =
@@ -405,10 +405,10 @@ function show()
     on(events(ax).dropped_files) do drop
         for file in drop
             if occursin(".json", file)
-                configfile[] = file
-                notify(configfile)
+                configfilename[] = file
+                notify(configfilename)
 
-                res = handle_new_config(configfile[])
+                res = handle_new_config(configfilename[])
                 println(res)
                 return
             end
@@ -655,7 +655,7 @@ function show()
                     "target: ",
                     rich(String(Printf.@sprintf "%30s" string(target_name)), "\n"),
                     "config: ",
-                    rich(String(Printf.@sprintf "%30s" configfile[])),
+                    rich(String(Printf.@sprintf "%30s" configfilename[])),
                 )
 
                 # debuginfo[] = rich("target: ", "nothin")
@@ -802,7 +802,10 @@ function stringify(line::CSVLine)
     return out
 end
 
-function write_csv(outfile::AbstractString)
+function write_csv(
+    outfile::AbstractString;
+    infile::AbstractString = joinpath("config", "example.jsonc"),
+)
     # server = Sockets.listen(unixsockname)
     sock = Sockets.UDPSocket()
     # bind(sock, unixsockname)
@@ -811,7 +814,7 @@ function write_csv(outfile::AbstractString)
     outf = open(outfile, "a")
 
     sim, sat, sat_config, targets, target_configs, modes, mode_table =
-        handle_new_config(joinpath("config", "example.jsonc"))
+        handle_new_config(infile)
 
     mode_table = tabulate(modes)
     target_state_table = tabulate(targets)
