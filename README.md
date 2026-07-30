@@ -31,12 +31,13 @@ $ julia --project=.
 ```
 
 From the REPL, hit the `]` key to go into the package manager. Your prompt should change, and you should run `instantiate` to install required packages.
+
 ```julia-repl
-julia> ] 
+julia> ]
 (OpenSOAP) pkg> instantiate
 ```
 
-You can hit backspace to get back to the `julia>` prompt from the package prompt. 
+You can hit backspace to get back to the `julia>` prompt from the package prompt.
 
 To launch the interactive orbit viewer, use the example called `both.jl`:
 
@@ -50,14 +51,6 @@ This will probably precompile for a while. This happens the first time you run s
 julia> main()
 ```
 
-You should see a display like the one further up this page. Press the `h` key for a help menu. 
+You should see a display like the one further up this page. Press the `h` key for a help menu.
 
 To exit, press `q` in the viewer.
-
-## To do
-- [ ] swap underlying socket to UDP so there is no locking of sim based on TCP. Note: because of the current Julia implementation of sockets, there is no  
-- [x] add PD control on $\mathrm{SO}(3)$ directly.
-- [ ] ingest complex config. Or maybe a callback-ability for state transition events. or something.
-- [ ] Make it easier to launch and exit.
-- [ ] later: hot reload of config. I.e. a watcher for config file that reloads the spacecraft and target config (but not initial conditions). 
-- [ ] Add labeling control to monitor.
