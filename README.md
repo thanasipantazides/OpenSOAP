@@ -54,3 +54,16 @@ julia> main()
 You should see a display like the one further up this page. Press the `h` key for a help menu.
 
 To exit, press `q` in the viewer.
+
+## Details
+
+A `mode` is an operational state of the spacecraft. The power consumption is determined by `mode`. Some modes have higher priority than others. A mode may have `constraint`s which must be satisfied to run it. A mode may have one or more `target`s to look at. The rules are:
+
+- A mode can run if _any_ of its `target`s are visible.
+- A mode can run if _all_ of its `constraint`s are satisfied.
+
+A `target` is a position or reference direction for the spacecraft to look at. Maybe it is a groundstation. Maybe it is the sun. Maybe it is something else. Maybe it comes with some metadata.
+
+A `constraint` is a restriction of `mode` based on spacecraft position. This is used to enforce things like `only
+
+As it stands now, the waters are muddy: I use constrain the usage of the B-field pointing mode, but there are no explicit constraints on groundstation communication, that info is rolled into the groundstation visibility cone. So the interface is not very pure. But I hope to change that.
