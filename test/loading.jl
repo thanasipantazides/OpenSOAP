@@ -2,7 +2,7 @@ using Test
 using OpenSOAP
 
 @testset "ID consistency" begin
-    testjsonpath = joinpath("..", "config", "example_bool.jsonc")
+    testjsonpath = joinpath("..", "config", "example.jsonc")
     if isfile(testjsonpath)
         sim, sat, sat_config, target_states, target_configs, constraints, modes =
             load_config(Dict(load_jsonc(testjsonpath)))

@@ -8,13 +8,13 @@ println("running with $(nprocs()) workers")
 @everywhere import OpenSOAP
 
 function main()
-
+    fconfig = joinpath("config", "example.jsonc")
     println("launching core...")
-    fcore = @spawnat workers()[1] OpenSOAP.run()
+    fcore = @spawnat workers()[1] OpenSOAP.run(config_path = fconfig)
     sleep(3)
     println("launching monitor...")
     # fmon = @spawnat workers()[2] OpenSOAP.show()
-    OpenSOAP.show()
+    OpenSOAP.monitor(config_path = fconfig)
 
     # f = fetch(fmon)
     f = fetch(fcore)

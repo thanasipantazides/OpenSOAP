@@ -108,7 +108,7 @@ function handle_new_config(path::AbstractString)
     return res
 end
 
-function show(; config_path::AbstractString = joinpath("config", "example.jsonc"))
+function monitor(; config_path::AbstractString = joinpath("config", "example.jsonc"))
     # server = Sockets.listen(unixsockname)
     sock = Sockets.UDPSocket()
     # bind(sock, unixsockname)

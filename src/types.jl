@@ -300,3 +300,100 @@ function IDDict(
 ) where {T<:Union{AbstractState,AbstractConfig,AbstractConstraint}}
     return Dict(v.id => v for v in val)
 end
+
+function Base.show(io::IO, confs::Vector{<:AbstractConfig})
+    fmt =
+        PrettyTables.TextTableFormat(borders = PrettyTables.text_table_borders__borderless)
+
+    els = fill("", (length(confs), 3))
+    for (k, c) in enumerate(confs)
+        els[k, 1]="$(c.name)"
+        els[k, 2]="$(string(c.id, base=16, pad=4))"
+        els[k, 3]="-> $(string(c.dynamic_id, base=16, pad=4))"
+    end
+    PrettyTables.pretty_table(
+        io,
+        els;
+        title = "Target configurations",
+        column_labels = ["Conf. ID", "Name", "Dyn. ID"],
+        backend = :text,
+        table_format = fmt,
+    )
+end
+
+function Base.show(io::IO, confs::IDDict{<:AbstractConfig})
+    fmt =
+        PrettyTables.TextTableFormat(borders = PrettyTables.text_table_borders__borderless)
+
+    els = fill("", (length(confs), 3))
+    for (k, c) in enumerate(collect(values(confs)))
+        els[k, 1]="$(c.name)"
+        els[k, 2]="$(string(c.id, base=16, pad=4))"
+        els[k, 3]="-> $(string(c.dynamic_id, base=16, pad=4))"
+    end
+    PrettyTables.pretty_table(
+        io,
+        els;
+        title = "Target configurations",
+        column_labels = ["Name", "Conf. ID", "Dyn. ID"],
+        backend = :text,
+        table_format = fmt,
+    )
+end
+
+function Base.show(
+    io::IO,
+    data::Tuple{
+        Vector{ModeConfig},
+        IDDict{<:AbstractState},
+        IDDict{<:AbstractConfig},
+        IDDict{<:AbstractConstraint},
+    },
+)
+    fmt =
+        PrettyTables.TextTableFormat(borders = PrettyTables.text_table_borders__borderless)
+
+    modes = data[1]
+    target_configs = data[3]
+    constraints = data[4]
+
+    all_objs = cat(collect(values(target_configs)), collect(values(constraints)), dims = 1)
+    all_names = [c.name for c in all_objs]
+
+    mode_names = [m.name for m in modes]
+    push!(mode_names, "target ID")
+    push!(mode_names, "type")
+
+    els = fill("---", (length(target_configs) + length(constraints), length(modes) + 2))
+    for m in eachindex(modes)
+        trow = findall(c -> c.id in modes[m].target_ids, collect(values(target_configs)))
+        crow =
+            length(target_configs) .+
+            findall(c -> c.id in modes[m].constraint_ids, collect(values(constraints)))
+        els[trow, m] .= "-x-"
+        els[crow, m] .= "-x-"
+    end
+
+    for r in eachindex(all_objs)
+        if typeof(all_objs[r]) <: AbstractConfig
+            els[
+                r,
+                length(modes)+1,
+            ] = "$(string(all_objs[r].id, base=16, pad=4)) -> $(string(all_objs[r].dynamic_id, base=16, pad=4))"
+        else
+            els[r, length(modes)+1] = ""
+        end
+        els[r, length(modes)+2] = string(nameof(typeof(all_objs[r])))
+    end
+
+    PrettyTables.pretty_table(
+        io,
+        els;
+        title = "Modes",
+        column_labels = mode_names,
+        row_labels = all_names,
+        alignment = :c,
+        backend = :text,
+        table_format = fmt,
+    )
+end

@@ -250,7 +250,6 @@ function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
     name = InlineStrings.InlineString63(json["name"])
     data_source = json["direction"]["source"]
     target_type = lookup_target(data_source)
-    println("> reading source: ", data_source)
     if target_type === SunState
         state = SunState(
             next_id!(id_registry),
@@ -543,7 +542,7 @@ function load_config(d::Dict{String,Any})
         ts, tc = make_target(targ, sim.start_time, id_registry)
 
         if isnothing(ts) || isnothing(tc)
-            println("skipping target: ", Dict(targ))
+            # println("skipping target: ", Dict(targ))
             continue
         end
         push!(starget_states, ts)
@@ -579,7 +578,7 @@ function load_config(d::Dict{String,Any})
 
     targetless = filter(m -> length(m.target_ids) == 0, modes)
     if length(targetless) != 1
-        @error "Can only have one mode without any targets listed (idle)!"
+        @warn "Can only have one mode without any targets listed (idle)!"
     end
 
     sat.mode = values(modes)[1].id

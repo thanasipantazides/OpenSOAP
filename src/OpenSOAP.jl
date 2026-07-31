@@ -4,9 +4,10 @@ import Sockets
 import InlineStrings
 using GeometryBasics
 import Dates
+import PrettyTables
 import SatelliteToolboxTransformations,
     SatelliteToolboxBase, SatelliteToolboxCelestialBodies
-import Base: +, *, @kwdef, reinterpret
+import Base: +, *, @kwdef, reinterpret, show
 import Makie
 
 global const unixsockname = "/tmp/soap_out.sock"
@@ -15,6 +16,7 @@ const IDDict = Dict{IDType,T} where {T}
 global const eop = SatelliteToolboxTransformations.fetch_iers_eop()
 
 include("types.jl")
+export show
 include("util.jl")
 include("core.jl")
 include("visibility.jl")
@@ -62,7 +64,7 @@ export worm,
     step!,
     run,
     run_free,
-    show,
+    monitor,
     write_csv,
     load_earth_texture_to_ecef,
     test_texture,

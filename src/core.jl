@@ -27,71 +27,14 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
         "downlink_rate" => 17e6,
         "do_J2" => true,
     )
-    groundstations = [
-        GroundState(
-            0x0001,
-            0.0,
-            10,
-            pi/180*Vec3d(78.220, 15.55, 1718.0),
-            SatelliteToolboxTransformations.r_ecef_to_eci(
-                SatelliteToolboxTransformations.ITRF(),
-                SatelliteToolboxTransformations.J2000(),
-                SatelliteToolboxBase.date_to_jd(sim.start_time),
-                eop,
-            )*SatelliteToolboxTransformations.geodetic_to_ecef(
-                (pi/180*Vec3d(78.22, 15.55, 1718.0))...,
-            ),
-            false,
-            false,
-        ),
-        GroundState(
-            0x0002,
-            0.0,
-            9,
-            pi/180*Vec3d(-53.167, -70.933, 34.0),
-            SatelliteToolboxTransformations.r_ecef_to_eci(
-                SatelliteToolboxTransformations.ITRF(),
-                SatelliteToolboxTransformations.J2000(),
-                SatelliteToolboxBase.date_to_jd(sim.start_time),
-                eop,
-            )*SatelliteToolboxTransformations.geodetic_to_ecef(
-                (pi/180*Vec3d(-53.167, -70.933, 34.0))...,
-            ),
-            false,
-            false,
-        ),
-        GroundState(
-            0x0003,
-            0.0,
-            8,
-            pi/180*Vec3d(-33.86777, 151.21, 5.0),
-            SatelliteToolboxTransformations.r_ecef_to_eci(
-                SatelliteToolboxTransformations.ITRF(),
-                SatelliteToolboxTransformations.J2000(),
-                SatelliteToolboxBase.date_to_jd(sim.start_time),
-                eop,
-            )*SatelliteToolboxTransformations.geodetic_to_ecef(
-                (pi/180*Vec3d(-33.86777, 151.21, 5.0))...,
-            ),
-            false,
-            false,
-        ),
-    ]
+
+    # [println(c) for c in values(target_configs)]
+    println(collect(values(target_configs)))
+
+    println((modes, targets, target_configs, constraints))
 
     # sun_state = filter(x -> isa(x, SunState), targets)[1]
     sun_state = findfirst(x -> isa(x, SunState), targets)
-    println("> sun!", sun_state)
-
-    earth_state = EarthState(
-        IDType(0x00f0),
-        0,
-        SatelliteToolboxTransformations.r_eci_to_ecef(
-            SatelliteToolboxTransformations.J2000(),
-            SatelliteToolboxTransformations.ITRF(),
-            SatelliteToolboxBase.date_to_jd(sim.start_time),
-            eop,
-        ),
-    )
 
     server = Sockets.listen(unixsockname)
     println("waiting for connection...")
