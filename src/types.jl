@@ -86,11 +86,11 @@ struct MagneticFieldConfig<:AbstractConfig
     model_order::UInt8
 end
 
-struct LLAConstraint<:AbstractConstraint
+# placeholder
+struct EarthConfig<:AbstractConfig
     id::IDType
-    lat::Point2d
-    lon::Point2d
-    alt::Point2d
+    name::InlineStrings.String63
+    dynamic_id::IDType
 end
 
 @kwdef struct SatelliteConfig<:AbstractConfig
@@ -117,9 +117,21 @@ end
 end
 
 # find the config struct for a corresponding dynamic (state) struct by id
-function find_config(from::AbstractState, lookup::Vector{T}) where {T<:AbstractConfig}
-    res = findfirst(p -> p.dynamic_id == from.id, lookup)
-    return lookup[res]
+function find_config(
+    state::AbstractState,
+    config_lookup::Vector{T},
+) where {T<:AbstractConfig}
+    res = findfirst(p -> p.dynamic_id == state.id, config_lookup)
+    return config_lookup[res]
+end
+
+# find the config struct for a corresponding dynamic (state) struct by id
+function find_config(
+    state::AbstractState,
+    config_lookup::IDDict{T},
+) where {T<:AbstractConfig}
+    res = config_lookup[findfirst(p -> p.dynamic_id == state.id, config_lookup)]
+    return res
 end
 
 mutable struct PositionState<:AbstractState
@@ -227,6 +239,14 @@ mutable struct MagneticFieldState<:AbstractTarget
     selected::Bool
 end
 
+struct LLAConstraint<:AbstractConstraint
+    id::IDType
+    name::InlineStrings.String63
+    lat::Point2d
+    lon::Point2d
+    alt::Point2d
+end
+
 function +(a::PositionState, b::PositionState)
     if a.elapsed_time != b.elapsed_time
         error("can only add States with the same time")
@@ -267,4 +287,16 @@ function lookup_igrf_normalization(value::AbstractString)::UInt8
         @warn "key $value not a valid IGRF normalization"
         return d["none"]
     end
+end
+
+function IDDict(
+    val::Vector{T},
+) where {T<:Union{AbstractState,AbstractConfig,AbstractConstraint}}
+    return Dict(v.id => v for v in val)
+end
+
+function IDDict(
+    val::Set{T},
+) where {T<:Union{AbstractState,AbstractConfig,AbstractConstraint}}
+    return Dict(v.id => v for v in val)
 end

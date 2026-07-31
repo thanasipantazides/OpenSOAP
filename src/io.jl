@@ -21,6 +21,8 @@ end
 function lookup_target(s::T) where {T<:AbstractString}
     if lowercase(s) == "ephemeris.sun"
         return SunState
+    elseif lowercase(s) == "ecef"
+        return EarthState
     elseif lowercase(s) == "igrf"
         # @warn("IGRF tracking unimplemented, skipping")
         return MagneticFieldState
@@ -39,14 +41,18 @@ function make_mode(
     mode_name::AbstractString,
     start_time::Dates.DateTime,
     id_registry::Set{IDType},
+    target_states::IDDict{<:AbstractTarget},
+    target_configs::IDDict{<:AbstractConfig},
+    constraints::IDDict{<:AbstractConstraint},
 )
     mode = json["spacecraft"]["modes"][mode_name]
-    tstates, tconfigs = fetch_targets_for_mode(json, mode_name, start_time, id_registry)
-    constraints = fetch_constraints_for_mode(json, mode_name, start_time, id_registry)
+    # todo: we EarthState to behave like other States. But it gets filtered out here. The fetch_ functions should take lists of pre-instantiated targets and modes. 
+    # tstates, tconfigs = fetch_targets_for_mode(json, mode_name, start_time, id_registry)
+    # constraints = fetch_constraints_for_mode(json, mode_name, start_time, id_registry)
 
-    tstate_ids = [t.id for t in tstates]
-    tconfig_ids = [t.id for t in tconfigs]
-    constraint_ids = [c.id for c in constraints]
+    tstate_ids = [t.id for t in values(target_states)]
+    tconfig_ids = [t.id for t in values(target_configs) if t.name in mode["targets"]]
+    constraint_ids = [c.id for c in values(constraints) if c.name in mode["constraints"]]
 
     m = ModeConfig(
         next_id!(id_registry),
@@ -59,7 +65,7 @@ function make_mode(
         mode["data_production"],
         Vec3d(mode["direction_Body"]),
     )
-    return m, tstates, tconfigs, constraints
+    return m
     # populate the rest of ModeConfig directly from `mode`
 end
 
@@ -74,8 +80,8 @@ function fetch_targets_for_mode(
     target_states = Vector{AbstractTarget}()
     target_configs = Vector{AbstractConfig}()
 
-    if "target" in keys(mode) && length(mode["target"]) > 0
-        for tstr in mode["target"]
+    if "targets" in keys(mode) && length(mode["targets"]) > 0
+        for tstr in mode["targets"]
             if tstr != ""
                 targetj = find_by_name(json["spacecraft"]["targets"], tstr)
 
@@ -101,8 +107,8 @@ function fetch_constraints_for_mode(
     mode = json["spacecraft"]["modes"][mode_name]
 
     constraints = Vector{AbstractConstraint}()
-    if "constraint" in keys(mode) && length(mode["constraint"]) > 0
-        for cstr in mode["constraint"]
+    if "constraints" in keys(mode) && length(mode["constraints"]) > 0
+        for cstr in mode["constraints"]
             if cstr != ""
                 constraintj = find_by_name(json["spacecraft"]["constraints"], cstr)
 
@@ -244,6 +250,7 @@ function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
     name = InlineStrings.InlineString63(json["name"])
     data_source = json["direction"]["source"]
     target_type = lookup_target(data_source)
+    println("> reading source: ", data_source)
     if target_type === SunState
         state = SunState(
             next_id!(id_registry),
@@ -253,12 +260,25 @@ function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
             false,
             false,
         )
-        # config = TargetConfig(
-        #     next_id!(id_registry),
 
-        # )
         config = TargetConfig(next_id!(id_registry), json["name"], state.id, 0.0, pi, pi/2)
         return (state, config)
+
+    elseif target_type === EarthState
+        state = EarthState(
+            next_id!(id_registry),
+            0.0,
+            SatelliteToolboxTransformations.r_eci_to_ecef(
+                SatelliteToolboxTransformations.J2000(),
+                SatelliteToolboxTransformations.ITRF(),
+                SatelliteToolboxBase.date_to_jd(start_time),
+                eop,
+            ),
+        )
+
+        config = EarthConfig(next_id!(id_registry), json["name"], state.id)
+        return (state, config)
+
     elseif target_type === GroundState
         state = GroundState(
             next_id!(id_registry),
@@ -285,8 +305,8 @@ function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
             pi,
         )
         return (state, config)
-    elseif target_type === MagneticFieldState
 
+    elseif target_type === MagneticFieldState
         # create a fake initial position to get a reasonable starting magnetic field value out.
         init_ECI = [6371e3, 0.0, 0.0]
         C_ECEF_ECI = SatelliteToolboxTransformations.r_eci_to_ecef(
@@ -328,6 +348,7 @@ function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
             clamp(json["direction"]["model_order"], 1, 13),
         )
         return (state, config)
+
     else
         # (state, config)
         return (nothing, nothing)
@@ -343,7 +364,7 @@ function make_constraint(json, start_time::Dates.DateTime, id_registry::Set{IDTy
     end
     data_source = json["source"]
     constraint_type = lookup_target(data_source)
-    println("Got constraint type: $constraint_type")
+    # println("Got constraint type: $constraint_type")
 
     if constraint_type === LLAConstraint
         lat = [isa(val, Real) ? val : parse(Float64, val) for val in json["value"]["lat"]]
@@ -354,7 +375,8 @@ function make_constraint(json, start_time::Dates.DateTime, id_registry::Set{IDTy
         lon2 = pi/180*Point2d(min(lon...), max(lon...))
         alt2 = pi/180*Point2d(min(alt...), max(alt...))
 
-        c = LLAConstraint(next_id!(id_registry), lat2, lon2, alt2)
+        name = json["name"]
+        c = LLAConstraint(next_id!(id_registry), name, lat2, lon2, alt2)
         return c
     else
         return nothing
@@ -512,101 +534,99 @@ function load_config(d::Dict{String,Any})
         antenna_dir,
     )
 
-    # target_states = Vector{AbstractTarget}()
-    # target_config = Vector{TargetConfig}()
-    # target_constraints = Vector{AbstractConstraint}()
+    # instantiate all target states, configs, and constraints:
+    starget_states = Set{AbstractState}()
+    starget_configs = Set{AbstractConfig}()
+    sconstraints = Set{AbstractConstraint}()
 
-    # # first, build list of targets
-    # targets = d["spacecraft"]["targets"]
-    # for target_data in targets
-    #     this_target_state, this_target_config =
-    #         make_target(target_data, sim.start_time, id_registry)
-    #     constraints = make_constraint(target_data, sim.start_time, id_registry)
-    #     if !isnothing(this_target_state)
-    #         push!(target_states, this_target_state)
-    #         push!(target_config, this_target_config)
-    #     end
-    #     # if length(constraints) > 0
-    #     #     append!(target_constraints, constraints)
-    #     # end
+    for targ in d["spacecraft"]["targets"]
+        ts, tc = make_target(targ, sim.start_time, id_registry)
 
-    #     # do some big lookup of objects based on `target_data_source`
-    #     # Construct an AbstractTarget, then refer to it in TargetConfig
-    # end
+        if isnothing(ts) || isnothing(tc)
+            println("skipping target: ", Dict(targ))
+            continue
+        end
+        push!(starget_states, ts)
+        push!(starget_configs, tc)
+    end
+
+    for cons in d["spacecraft"]["constraints"]
+        c = make_constraint(cons, sim.start_time, id_registry)
+        push!(sconstraints, c)
+    end
+
+    target_states = IDDict(starget_states)
+    target_configs = IDDict(starget_configs)
+    constraints = IDDict(sconstraints)
 
     # then build list of modes, looking up targets
     modes = ModeConfig[]
-    target_states = Set{AbstractState}()
-    target_configs = Set{AbstractConfig}()
-    constraints = Set{AbstractConstraint}()
 
     for mode_name in keys(d["spacecraft"]["modes"])
 
-        # make the mode. If a target or target config or constraint needs making, do it.
-
-
-        # note: target states, target configs, and constraints need to get returned from this too so they don't just disappear
-        mode, new_states, new_configs, new_constraints =
-            make_mode(d, mode_name, sim.start_time, id_registry)
+        mode = make_mode(
+            d,
+            mode_name,
+            sim.start_time,
+            id_registry,
+            target_states,
+            target_configs,
+            constraints,
+        )
         push!(modes, mode)
-        union!(target_states, new_states)
-        union!(target_configs, new_configs)
-        union!(constraints, new_constraints)
 
-        # mode_target_names = d["spacecraft"]["modes"][mode_name]["target"]
-        # mode_target_ids =
-        #     [lookup_target_config(name, target_config) for name in mode_target_names]
-        # # println("> for mode $(mode_name): $(mode_target_ids)")
-        # # this is ok to do because target_config don't contain `nothing`
-        # mode_targets = filter(x -> x.id in mode_target_ids, target_config)
-
-        # # todo: filter target_constraints and insert for this mode.
-
-        # m = ModeConfig(
-        #     next_id!(id_registry),
-        #     InlineStrings.InlineString63(mode_name),
-        #     # SunTarget, # todo: lookup correct target type
-        #     # typeof(lookup_target_state(d["spacecraft"]["modes"][mode_name]["target"], target_states, target_config)),
-        #     map(x->x.id, mode_targets),
-        #     [], # todo: insert constraints here.
-        #     d["spacecraft"]["modes"][mode_name]["priority"],
-        #     Makie.RGBAf(d["spacecraft"]["modes"][mode_name]["color"] ./ 255 ...),
-        #     d["spacecraft"]["modes"][mode_name]["power_consumption"],
-        #     d["spacecraft"]["modes"][mode_name]["data_production"],
-        #     d["spacecraft"]["modes"][mode_name]["direction_Body"],  # todo: normalize
-        # )
-
-        # push!(modes, mode)
-        # if length(intersect(mode_target_ids, map(x->x.id, target_config))) != length(mode_target_ids)
-        #     @warn "Some targets missing for mode $(m.id) : $(mode_name). They have been dropped."
-        # end
     end
-
-    # convert these to vectors now that they are done being populated
-    target_configs = Vector([target_configs...])
-    target_states = Vector([target_states...])
-    constraints = Vector([constraints...])
 
     targetless = filter(m -> length(m.target_ids) == 0, modes)
     if length(targetless) != 1
         @error "Can only have one mode without any targets listed (idle)!"
     end
-    mode_table = make_mode_table(modes, target_configs)
 
-    sat.mode = modes[1].id
-    sat.target = target_states[1].id
+    sat.mode = values(modes)[1].id
+    sat.target = [values(target_states)...][1].id
 
-    return (sim, sat, sat_config, target_states, target_configs, modes, mode_table)
+    check_ids(
+        sat,
+        sat_config,
+        target_states::IDDict{<:AbstractState},
+        target_configs::IDDict{<:AbstractConfig},
+        constraints::IDDict{<:AbstractConstraint},
+        modes,
+    )
+
+    return (sim, sat, sat_config, target_states, target_configs, constraints, modes)
 end
-
-# for now, just serve a default mode list.
-function load_mode_config(path::AbstractString)
-    return default_mode_list()
-end
-
 
 function tabulate(
     x::Union{Vector{<:AbstractTarget},Vector{<:AbstractState},Vector{<:AbstractConfig}},
 )
     return Dict(p.id => p for p in x)
+end
+
+function check_ids(
+    sat,
+    sat_config,
+    target_states::IDDict{<:AbstractState},
+    target_configs::IDDict{<:AbstractConfig},
+    constraints::IDDict{<:AbstractConstraint},
+    modes,
+)
+    good = true
+    good = good && sat_config.dynamic_id == sat.id
+    for (k, v) in target_configs
+        # self-consistency
+        good = good && k == v.id
+        # reference check
+        good = good && v.dynamic_id in keys(target_states)
+    end
+
+    for mode in modes
+        for tc in mode.target_ids
+            good = good && tc in keys(target_configs)
+        end
+        for c in mode.constraint_ids
+            good = good && c in keys(constraints)
+        end
+    end
+    return good
 end

@@ -129,12 +129,13 @@ function show(; config_path::AbstractString = joinpath("config", "example.jsonc"
 
     body_mesh_val = get_body_mesh()
 
-    sim, sat, sat_config, targets, target_configs, modes, mode_table =
+    sim, sat, sat_config, target_states, target_configs, constraints, modes =
         handle_new_config(config_path)
 
-    mode_table = tabulate(modes)
-    target_state_table = tabulate(targets)
-    target_config_table = tabulate(target_configs)
+
+    # mode_table = tabulate(modes)
+    # target_state_table = tabulate(targets)
+    # target_config_table = tabulate(target_configs)
 
 
     helpstring = """
@@ -555,11 +556,11 @@ function show(; config_path::AbstractString = joinpath("config", "example.jsonc"
                     color = RGBf(243/255, 241/255, 218/255),
                     direction = -Vec3d(simdata.position_ECI),
                 )
-                target_state_table[simdata.id] = simdata
+                target_states[simdata.id] = simdata
 
             elseif typeof(simdata) === GroundState
                 gs_dict[simdata.id] = simdata
-                target_state_table[simdata.id] = simdata
+                target_states[simdata.id] = simdata
                 # met[] = simdata.elapsed_time
 
             elseif typeof(simdata) === SatelliteState
@@ -600,25 +601,28 @@ function show(; config_path::AbstractString = joinpath("config", "example.jsonc"
                 GLMakie.translate!(body_frame, pos_ECI[][end])
 
                 # update color and target direction
-                mode_conf = mode_table[simdata.mode]
+                # for m in modes
+                #     if m.id =
+                # end
+                mode_conf = modes[findfirst(x -> x.id == simdata.mode, modes)]
+
+                # mode_conf = mode_table[simdata.mode]
                 tailcolor[] = mode_conf.color
 
                 if simdata.target == typemax(IDType)
                     target_dir_ECI[] = [Point3d(NaN), Point3d(NaN)]
-                elseif isa(target_state_table[simdata.target], SunState)
+                elseif isa(target_states[simdata.target], SunState)
                     target_dir_ECI[] = [
                         simdata.position_ECI,
                         simdata.position_ECI +
                         0.33*6371e3*normalize(
-                            target_state_table[simdata.target].position_ECI -
+                            target_states[simdata.target].position_ECI -
                             simdata.position_ECI,
                         ),
                     ]
-                elseif isa(target_state_table[simdata.target], GroundState)
-                    target_dir_ECI[] = [
-                        simdata.position_ECI,
-                        target_state_table[simdata.target].position_ECI,
-                    ]
+                elseif isa(target_states[simdata.target], GroundState)
+                    target_dir_ECI[] =
+                        [simdata.position_ECI, target_states[simdata.target].position_ECI]
                 else
                     println("unidentified target type: ", typeof(mode_conf.target_type))
                 end
@@ -643,7 +647,7 @@ function show(; config_path::AbstractString = joinpath("config", "example.jsonc"
 
                 target_name =
                     (simdata.target == typemax(IDType)) ? "" :
-                    typeof(target_state_table[simdata.target])
+                    typeof(target_states[simdata.target])
 
                 debuginfo[] = rich(
                     "mode:   ",
@@ -661,7 +665,7 @@ function show(; config_path::AbstractString = joinpath("config", "example.jsonc"
                 # debuginfo[] = rich("target: ", "nothin")
                 notify(debuginfo)
             else
-                println("unknown message type")
+                # println("unknown message type")
             end
 
             # update all groundstations
@@ -813,12 +817,12 @@ function write_csv(
 
     outf = open(outfile, "a")
 
-    sim, sat, sat_config, targets, target_configs, modes, mode_table =
+    sim, sat, sat_config, target_states, target_configs, constraints, modes =
         handle_new_config(infile)
 
-    mode_table = tabulate(modes)
-    target_state_table = tabulate(targets)
-    target_config_table = tabulate(target_configs)
+    # mode_table = tabulate(modes)
+    # target_state_table = tabulate(targets)
+    # target_config_table = tabulate(target_configs)
 
     start_time = sim.start_time
     # met = Observable(Float64(0.0))
@@ -891,11 +895,11 @@ function write_csv(
                 # GLMakie.rotate!(earth_mesh, q_ECEF_ECI[])
 
             elseif typeof(simdata) === SunState
-                target_state_table[simdata.id] = simdata
+                target_states[simdata.id] = simdata
 
             elseif typeof(simdata) === GroundState
                 # gs_dict[simdata.id] = simdata
-                target_state_table[simdata.id] = simdata
+                target_states[simdata.id] = simdata
                 # met[] = simdata.elapsed_time
 
             elseif typeof(simdata) === SatelliteState

@@ -2,7 +2,7 @@
 
 function run(; config_path::AbstractString = joinpath("config", "example.jsonc"))
 
-    sim, sat, sat_config, targets, target_configs, modes, mode_table =
+    sim, sat, sat_config, targets, target_configs, constraints, modes =
         load_config(Dict(load_jsonc(config_path)))
 
     # return targets, target_configs
@@ -78,7 +78,9 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
         ),
     ]
 
-    sun_state = filter(x -> isa(x, SunState), targets)[1]
+    # sun_state = filter(x -> isa(x, SunState), targets)[1]
+    sun_state = findfirst(x -> isa(x, SunState), targets)
+    println("> sun!", sun_state)
 
     earth_state = EarthState(
         IDType(0x00f0),
@@ -150,29 +152,29 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
             # update all dynamic systems
             step_sim!(
                 sat,
-                earth_state,
+                sat_config,
                 targets,
+                target_configs,
+                constraints,
+                modes,
                 sim.time_step,
                 time,
-                target_configs,
-                modes,
-                mode_table,
-                sat_config,
                 params;
                 exog = perturbation[],
             )
+
             # update timestep
             time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
 
             # serialize and send data
             sat_data = packetize(sat, 0x0000, sim.step_count)
             write(sock, sat_data)
-            earth_data = packetize(earth_state, 0x0000, sim.step_count)
-            write(sock, earth_data)
+            # # earth_data = packetize(earth_state, 0x0000, sim.step_count)
+            # write(sock, earth_data)
             # sun_data = packetize(sun_state, 0x0000, sim.step_count)
             # write(sock, sun_data)
 
-            for target in targets
+            for target in values(targets)
                 t_data = packetize(target, 0x0000, sim.step_count)
                 write(sock, t_data)
             end
@@ -201,4 +203,85 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
     end
 
     close(sock)
+end
+
+# same as run(), but no socket communication. For testing.
+function run_free(; config_path::AbstractString = joinpath("config", "example.jsonc"))
+
+    sim, sat, sat_config, targets, target_configs, constraints, modes =
+        load_config(Dict(load_jsonc(config_path)))
+
+
+    # println("targets:")
+    # [println(m) for m in targets]
+
+    # println("target_configs:")
+    # [println(m) for m in target_configs]
+
+    # println("constraints:")
+    # [println(m) for m in constraints]
+    println("modes:")
+    [println(m) for m in modes]
+    # for tc in target_configs
+    #     println(tc)
+    # end
+
+    inertia_B = diagm([5, 10, 13])*1e-2
+
+    params = Dict{String,Any}(
+        "I_Body" => inertia_B,
+        "I_Body_inv" => inv(inertia_B),
+        "max_angular_rate" => 2e-2, # rad/s
+        "battery_max" => 84*3600.0,
+        "storage_max" => 8e9,
+        "irradiance" => 1360.0,
+        "solar_panel_area" => 0.2*0.3*2,
+        "solar_panel_efficiency" => 0.29,
+        "downlink_rate" => 17e6,
+        "do_J2" => true,
+    )
+
+    earth_state = EarthState(
+        IDType(0x00f0),
+        0,
+        SatelliteToolboxTransformations.r_eci_to_ecef(
+            SatelliteToolboxTransformations.J2000(),
+            SatelliteToolboxTransformations.ITRF(),
+            SatelliteToolboxBase.date_to_jd(sim.start_time),
+            eop,
+        ),
+    )
+
+    packlen = 1
+
+    time = sim.start_time
+
+    # run simulation
+    while true
+        # update all dynamic systems
+        step_sim!(
+            sat,
+            sat_config,
+            targets,
+            target_configs,
+            constraints,
+            modes,
+            sim.time_step,
+            time,
+            params;
+        )
+        # update timestep
+        time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
+
+        # serialize data
+        sat_data = packetize(sat, 0x0000, sim.step_count)
+        earth_data = packetize(earth_state, 0x0000, sim.step_count)
+
+        for target in values(targets)
+            t_data = packetize(target, 0x0000, sim.step_count)
+        end
+
+
+        sim.step_count += 1
+    end
 end

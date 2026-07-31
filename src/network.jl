@@ -12,6 +12,7 @@ global const MESSAGE_TYPES = Dict{DataType,UInt16}(
     PositionState => 0x0010,
     AttitudeState => 0x0011,
     SatelliteState => 0x0020,
+    MagneticFieldState => 0x0104,
     EarthState => 0x0103,
     SunState => 0x0100,
     GroundState => 0x0400,
@@ -103,6 +104,20 @@ function ser(counter::UInt64, state::SatelliteState)::Vector{UInt8}
         f15,
         UInt8[0x0a],
     )
+    return res
+end
+
+# For MagneticFieldState type
+function ser(counter::UInt64, state::MagneticFieldState)::Vector{UInt8}
+    c = reinterpret(UInt8, [counter])
+    id = reinterpret(UInt8, [state.id])
+    st = reinterpret(UInt8, [state.elapsed_time])
+    sd = reinterpret(UInt8, [state.direction_ECI])
+    sv = reinterpret(UInt8, [state.visible])
+    sa = reinterpret(UInt8, [state.available])
+    ss = reinterpret(UInt8, [state.selected])
+
+    res = vcat(c, id, st, sd, sv, sa, ss, UInt8[0x0a])
     return res
 end
 

@@ -11,6 +11,7 @@ import Makie
 
 global const unixsockname = "/tmp/soap_out.sock"
 global const IDType = UInt16
+const IDDict = Dict{IDType,T} where {T}
 global const eop = SatelliteToolboxTransformations.fetch_iers_eop()
 
 include("types.jl")
@@ -60,12 +61,14 @@ export worm,
     step_earth,
     step!,
     run,
+    run_free,
     show,
     write_csv,
     load_earth_texture_to_ecef,
     test_texture,
-    load_mode_config,
-    load_jsonc
+    load_jsonc,
+    load_config,
+    check_ids
 
 export reinterpret
 

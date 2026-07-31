@@ -179,10 +179,12 @@ end
 
 function step!(
     earth::EarthState,
+    earth_config::EarthConfig,
     sat::SatelliteState,
+    sat_config::SatelliteConfig,
+    modes::Vector{ModeConfig},
     dt::Float64,
     t::Dates.DateTime,
-    config::TargetConfig,
     params,
 )
     earth.elapsed_time += dt
@@ -196,23 +198,27 @@ end
 
 function step!(
     sun::SunState,
+    sun_config::TargetConfig,
     sat::SatelliteState,
+    sat_config::SatelliteConfig,
+    modes::Vector{ModeConfig},
     dt::Float64,
     t::Dates.DateTime,
-    config::TargetConfig,
     params,
 )
     sun.elapsed_time += dt
     sun.position_ECI = SatelliteToolboxCelestialBodies.sun_position_mod(t)
-    set_visibility!(sat, sun, config)
+    set_visibility!(sun, sun_config, sat, sat_config, t, modes)
 end
 
 function step!(
     gs::GroundState,
+    gs_config::TargetConfig,
     sat::SatelliteState,
+    sat_config::SatelliteConfig,
+    modes::Vector{ModeConfig},
     dt::Float64,
     t::Dates.DateTime,
-    config::TargetConfig,
     params,
 )
     gs.elapsed_time += dt
@@ -223,92 +229,135 @@ function step!(
             SatelliteToolboxBase.date_to_jd(t),
             eop,
         )*SatelliteToolboxTransformations.geodetic_to_ecef(gs.position_LLA...)
-    set_visibility!(sat, gs, config)
+    set_visibility!(gs, gs_config, sat, sat_config, t, modes)
 end
 
-function step_earth(x::EarthState, dt::Float64, t::Dates.DateTime, params)::EarthState
-    x.elapsed_time += dt
-    x.attitude_ECI_ECEF = SatelliteToolboxTransformations.r_eci_to_ecef(
+function step!(
+    mag::MagneticFieldState,
+    mag_config::MagneticFieldConfig,
+    sat::SatelliteState,
+    sat_config::SatelliteConfig,
+    modes::Vector{ModeConfig},
+    dt::Float64,
+    t::Dates.DateTime,
+    params,
+)
+    mag.elapsed_time += dt
+    C_ECEF_ECI = SatelliteToolboxTransformations.r_eci_to_ecef(
         SatelliteToolboxTransformations.J2000(),
         SatelliteToolboxTransformations.ITRF(),
         SatelliteToolboxBase.date_to_jd(t),
         eop,
     )
-    return x
-end
-
-function step_sun(
-    sun::SunState,
-    x::SatelliteState,
-    dt::Float64,
-    t::Dates.DateTime,
-    params,
-)::SunState
-    sun.elapsed_time += dt
-    sun.position_ECI = SatelliteToolboxCelestialBodies.sun_position_mod(t)
-    # todo: replace hardcode Earth radius
-    sun.visible =
-        sun.position_ECI'*x.position_ECI / norm(sun.position_ECI) / norm(x.position_ECI) >
-        -sqrt(
-            max(
-                0,
-                1 -
-                (SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS)^2 / norm(x.position_ECI)^2,
+    pos_LLA = SatelliteToolboxTransformations.ecef_to_geodetic(C_ECEF_ECI*sat.position_ECI)
+    field_ECI = Vec3d(
+        C_ECEF_ECI'*SatelliteToolboxTransformations.ned_to_ecef(
+            SatelliteToolboxGeomagneticField.igrf(
+                DateFormats.yeardecimal(t),
+                pos_LLA[3],
+                pos_LLA[1],
+                pos_LLA[2],
+                Val(:geodetic);
+                max_degree = Int64(mag_config.model_order),
+                show_warnings = false,
             ),
-        )
-    return sun
+            pos_LLA...,
+            translate = false,
+        ),
+    )
+
+    if mag_config.normalization == 0x00
+        # no op
+    elseif mag_config.normalization == 0x01 # nadir
+        if sat.position_ECI'*field_ECI > 0
+            field_ECI = -field_ECI
+        end
+    elseif mag_config.normalization == 0x02 # zenith
+        if sat.position_ECI'*field_ECI < 0
+            field_ECI = -field_ECI
+        end
+    else
+        @warn "unhandled MagneticFieldConfig.normalization value $(mag_config.normalization)!\n"
+    end
+
+    mag.direction_ECI = field_ECI
+    set_visibility!(mag, mag_config, sat, sat_config, t, modes)
 end
 
-function step_targets(
-    targets::Vector{GroundState},
-    x::SatelliteState,
-    dt::Float64,
-    t::Dates.DateTime,
-    params,
-)::Vector{GroundState}
-    min_priority = UInt16(0xffff)
-    for target in targets
-        target.elapsed_time += dt
-        target.position_ECI =
-            SatelliteToolboxTransformations.r_ecef_to_eci(
-                SatelliteToolboxTransformations.ITRF(),
-                SatelliteToolboxTransformations.J2000(),
-                SatelliteToolboxBase.date_to_jd(t),
-                eop,
-            )*SatelliteToolboxTransformations.geodetic_to_ecef(target.position_LLA...)
-        # todo: replace hardcoded mask with params dict
-        if (x.position_ECI - target.position_ECI)'*target.position_ECI /
-           norm(x.position_ECI - target.position_ECI) / norm(target.position_ECI) >
-           cos(pi/2 - 20*pi/180)
-            target.visible = true
-        else
-            target.visible = false
-        end
-    end
-    return targets
-end
+# function step_earth(x::EarthState, dt::Float64, t::Dates.DateTime, params)::EarthState
+#     x.elapsed_time += dt
+#     x.attitude_ECI_ECEF = SatelliteToolboxTransformations.r_eci_to_ecef(
+#         SatelliteToolboxTransformations.J2000(),
+#         SatelliteToolboxTransformations.ITRF(),
+#         SatelliteToolboxBase.date_to_jd(t),
+#         eop,
+#     )
+#     return x
+# end
+
+# function step_sun(
+#     sun::SunState,
+#     x::SatelliteState,
+#     dt::Float64,
+#     t::Dates.DateTime,
+#     params,
+# )::SunState
+#     sun.elapsed_time += dt
+#     sun.position_ECI = SatelliteToolboxCelestialBodies.sun_position_mod(t)
+#     # todo: replace hardcode Earth radius
+#     sun.visible =
+#         sun.position_ECI'*x.position_ECI / norm(sun.position_ECI) / norm(x.position_ECI) >
+#         -sqrt(
+#             max(
+#                 0,
+#                 1 -
+#                 (SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS)^2 / norm(x.position_ECI)^2,
+#             ),
+#         )
+#     return sun
+# end
+
+# function step_targets(
+#     targets::Vector{GroundState},
+#     x::SatelliteState,
+#     dt::Float64,
+#     t::Dates.DateTime,
+#     params,
+# )::Vector{GroundState}
+#     min_priority = UInt16(0xffff)
+#     for target in targets
+#         target.elapsed_time += dt
+#         target.position_ECI =
+#             SatelliteToolboxTransformations.r_ecef_to_eci(
+#                 SatelliteToolboxTransformations.ITRF(),
+#                 SatelliteToolboxTransformations.J2000(),
+#                 SatelliteToolboxBase.date_to_jd(t),
+#                 eop,
+#             )*SatelliteToolboxTransformations.geodetic_to_ecef(target.position_LLA...)
+#         # todo: replace hardcoded mask with params dict
+#         if (x.position_ECI - target.position_ECI)'*target.position_ECI /
+#            norm(x.position_ECI - target.position_ECI) / norm(target.position_ECI) >
+#            cos(pi/2 - 20*pi/180)
+#             target.visible = true
+#         else
+#             target.visible = false
+#         end
+#     end
+#     return targets
+# end
 
 function clamp_attitude_align!(
     sat::SatelliteState,
-    mode::ModeConfig,
+    sat_config::SatelliteConfig,
+    target::Union{Nothing,<:AbstractTarget},
+    mode::Union{Nothing,ModeConfig},
     dt::Float64,
     t::Dates.DateTime,
-    target::AbstractTarget,
-    sat_config::SatelliteConfig,
     params;
     exog::Union{Nothing,PerturbationMessage} = nothing,
     secondary::Vec3d = Vec3d(0.0, 0.0, 1.0),
 )
 
-    from_Body = normalize(sat.attitude_ECI_Body*mode.direction_Body)
-    to_ECI = normalize(target.position_ECI - sat.position_ECI)
-
-    if isnan(norm(from_Body)) || isnan(norm(to_ECI)) # cases where either vector is NaN or zero
-        return
-    end
-
-    # C_err = r_min_arc(to_ECI, from_Body)
-    C_target = r_min_arc(to_ECI, mode.direction_Body)
 
     # choose:
     #   - :pd for proportional-derivative feedback
@@ -316,12 +365,42 @@ function clamp_attitude_align!(
     #   - :snap to instantly snap attitude to target
     attitude_style = :pd
 
+    if isnothing(mode)
+        inner_attitude_dynamic!(
+            sat,
+            sat_config,
+            sat.attitude_ECI_Body,
+            dt,
+            t,
+            params;
+            style = :pd,
+            exog = exog,
+        )
+        return
+    end
+
+    from_Body = normalize(sat.attitude_ECI_Body*mode.direction_Body)
+    to_ECI = Vec3d(0.0)
+    if isnothing(target)
+        to_ECI = from_Body
+    else
+        to_ECI = normalize(target.position_ECI - sat.position_ECI)
+    end
+
+    if isnan(norm(from_Body)) || isnan(norm(to_ECI)) # cases where either vector is NaN or zero
+        return
+    end
+
+    # C_err = r_min_arc(to_ECI, from_Body)
+    C_target = Mat3d(r_min_arc(to_ECI, mode.direction_Body))
+
+
     inner_attitude_dynamic!(
         sat,
+        sat_config,
         C_target,
         dt,
         t,
-        sat_config,
         params;
         style = attitude_style,
         exog = exog,
@@ -330,10 +409,10 @@ end
 
 function inner_attitude_dynamic!(
     sat::SatelliteState,
+    sat_config::SatelliteConfig,
     C_target::Mat3d,
     dt::Float64,
     t::Dates.DateTime,
-    sat_config::SatelliteConfig,
     params;
     style = :clamp,
     exog::Union{Nothing,PerturbationMessage} = nothing,
@@ -356,7 +435,6 @@ function inner_attitude_dynamic!(
         sat.angular_velocity_ECI_Body = sat_config.angular_rate_max*dt*rot_axis_Body
         C_push = exp(cross(sat.angular_velocity_ECI_Body))
         sat.attitude_ECI_Body = C_push'*sat.attitude_ECI_Body
-
 
         # proportional-derivative control
     elseif style == :pd
@@ -382,32 +460,53 @@ function inner_attitude_dynamic!(
 end
 
 # todo: change targets::Vector{GroundState} to targets::Vector{AbstractTarget} so it includes SunTarget.
+
 function set_mode!(
     sat::SatelliteState,
-    targets::Vector{AbstractTarget},
-    target_configs::Vector{TargetConfig},
+    sat_config::SatelliteConfig,
+    target_states::IDDict{<:AbstractTarget},
+    target_configs::IDDict{<:AbstractConfig},
+    constraints::IDDict{<:AbstractConstraint},
+    modes::Vector{ModeConfig},
     dt::Float64,
     t::Dates.DateTime,
-    modes::Vector{ModeConfig},
-    mode_table::Matrix{UInt8},
-    sat_config::SatelliteConfig,
     params;
-    exog::Union{Nothing,PerturbationMessage},
+    exog::Union{Nothing,PerturbationMessage} = nothing,
 )
 
-    visibility = map(c -> c.visible, targets)
-    feasible = mode_table'*visibility
-    best_priority = typemax(modes[1].priority)
+    visible_mode_ids = Set{IDType}()
+    allowed_modes = ModeConfig[]
+    for mode in modes
+        # list all the visible targets for this mode
+        for tc in mode.target_ids
+            # if *any* of these are visible, can do the mode.
+            if target_states[target_configs[tc].dynamic_id].visible
+                push!(visible_mode_ids, mode.id)
+            end
+        end
+
+        satisfied = true
+        for c in mode.constraint_ids
+            # all constraints must be satisfied for the mode to run. 
+            # But if there are no constraints on the mode, this loop won't run at all!
+            satisfied = satisfied && check_constraint(sat, sat_config, t, constraints[c])
+        end
+        satisfied && push!(allowed_modes, mode)
+    end
+
+    # filter the allowed (constraint-satisfied) modes by those that have visible targets
+    filter!(m->m.id in visible_mode_ids, allowed_modes)
+
+    # pick the mode with highest priority
     modechoice = nothing
-    mode_k = 0
-    for (m, mode) in enumerate(modes)
-        if feasible[m] > 0 && mode.priority < best_priority
-            modechoice = mode
-            best_priority = mode.priority
-            mode_k = m # gives the column index (mode index) in mode_table we have selected
+    if length(allowed_modes) > 0
+        res = findmin(m -> m.priority, allowed_modes)
+        if !isnothing(res)
+            modechoice = allowed_modes[res[2]]
         end
     end
 
+    # pick the target for this mode
     targetchoice = nothing
     if isnothing(modechoice) # due to lack of feasible targets
         idlemode = modes[findfirst(m -> length(m.target_ids) == 0, modes)]
@@ -416,45 +515,48 @@ function set_mode!(
     else
         sat.mode = modechoice.id
         # find the target actually used for this mode, so we can point at it:
-        targetchoice = targets[findfirst(t -> t != 0, visibility .* mode_table[:, mode_k])]
-        sat.target = targetchoice.id
-
-        clamp_attitude_align!(
-            sat,
-            modechoice,
-            dt,
-            t,
-            targetchoice,
-            sat_config,
-            params;
-            exog,
-        )
+        for tc in modechoice.target_ids
+            # if any of these are visible, can do the mode. This is finding the first.
+            if target_states[target_configs[tc].dynamic_id].visible
+                # note: if constraints/targets usage changes such that constraints depend on targets, this logic will need to be revised.
+                sat.target = target_configs[tc].dynamic_id
+                targetchoice = target_states[sat.target]
+                break
+            end
+        end
     end
-    set_power_data!(
+    clamp_attitude_align!(
         sat,
-        targets,
-        target_configs,
+        sat_config,
+        targetchoice,
+        modechoice,
         dt,
         t,
-        modes,
-        targetchoice,
-        sat_config,
-        params,
+        params;
+        exog = exog,
     )
+    set_power_data!(sat, sat_config, target_states, target_configs, modes, dt, t, params)
 end
+
+
 
 function set_power_data!(
     sat::SatelliteState,
-    targets::Vector{AbstractTarget},
-    target_configs::Vector{TargetConfig},
+    sat_config::SatelliteConfig,
+    target_states::IDDict{<:AbstractTarget},
+    target_configs::IDDict{<:AbstractConfig},
+    modes::Vector{ModeConfig},
     dt::Float64,
     t::Dates.DateTime,
-    modes::Vector{ModeConfig},
-    target::Union{Nothing,AbstractTarget},
-    sat_config::SatelliteConfig,
     params,
 )
-    sun = targets[findfirst(x -> isa(x, SunState), targets)]
+    sun = nothing
+    for ts in values(target_states)
+        if isa(ts, SunState)
+            sun = ts
+        end
+    end
+    # sun = findfirst(x -> isa(x, SunState), values(target_states)...)
     # todo: add arg modes::Dict{IDType, ModeConfig} to use for lookup.
     mode_conf = filter(m -> m.id == sat.mode, modes)[1]
     # mode_conf = params["modes"][sat.mode] 
@@ -471,12 +573,15 @@ function set_power_data!(
             sun_cos,
         )
 
-    # todo: replace with TargetConfig-specific downlink rate
     data_out = 0.0
-    if isa(target, GroundState)
-        conf = find_config(target, target_configs)
-        data_out = conf.data_consumption
+    if sat.target != typemax(IDType)
+        if isa(target_states[sat.target], GroundState)
+            conf = find_config(target_states[sat.target], target_configs)
+            data_out = conf.data_consumption
+        end
     end
+    # if isa(target_states, GroundState)
+    # end
 
     # cases where sun vector is not set, or is behind the solar panels
     if isnan(power_in) || power_in < 0.0
@@ -494,35 +599,35 @@ end
 
 function step_sim!(
     sat::SatelliteState,
-    earth::EarthState,
-    targets::Vector{AbstractTarget},
-    dt::Float64,
-    t::Dates.DateTime,
-    target_configs::Vector{TargetConfig},
-    modes::Vector{ModeConfig},
-    mode_table::Matrix{UInt8},
     sat_config::SatelliteConfig,
+    target_states::IDDict{<:AbstractState},
+    target_configs::IDDict{<:AbstractConfig},
+    constraints::IDDict{<:AbstractConstraint},
+    modes::Vector{ModeConfig},
+    dt::Float64,
+    time::Dates.DateTime,
     params;
     exog::Union{Nothing,PerturbationMessage} = nothing,
 )
+    # todo: rename this to "step_orbit" or something consistent. 
+    # Most of the SatelliteState doesn't change until set_mode later on.
     sat = step_satellite(sat, dt, params)
-    # sun = step_sun(sun, sat, dt, t, params)
-    earth = step_earth(earth, dt, t, params)
-    # targets = step_targets(targets, sat, dt, t, params)
-
-    for (target, target_conf) in zip(targets, target_configs)
-        step!(target, sat, dt, t, target_conf, params)
+    # NEW signature
+    for tconf in values(target_configs)
+        # extract the target state for this config
+        tstate = target_states[tconf.dynamic_id]
+        step!(tstate, tconf, sat, sat_config, modes, dt, time, params)
     end
 
     set_mode!(
         sat,
-        targets,
-        target_configs,
-        dt,
-        t,
-        modes,
-        mode_table,
         sat_config,
+        target_states,
+        target_configs,
+        constraints,
+        modes,
+        dt,
+        time,
         params;
         exog = exog,
     )
