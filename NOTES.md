@@ -2,7 +2,7 @@
 
 ## To do
 
-- [ ] swap underlying socket to UDP so there is no locking of sim based on TCP. Note: because of the current Julia implementation of sockets, there is no
+- [ ] swap underlying socket to UDP so there is no locking of sim based on TCP. Note: because of the current Julia implementation of sockets, there is no Unix domain datagram socket available. Shucks.
 - [x] add PD control on $\mathrm{SO}(3)$ directly.
 - [ ] ingest complex config. Or maybe a callback-ability for state transition events. or something.
 - [ ] Make it easier to launch and exit.
@@ -66,9 +66,9 @@ const IDDict{T} = Dict{IDType, T}
 function high_level!(
     sat::SatelliteState,
     sat_config::SatelliteConfig,
-    target_states::IDDict{<:AbstractTarget},
-    target_configs::IDDict{<:AbstractConfig},
-    constraints::IDDict{<:AbstractConstraint},
+    target_states::IDDict{AbstractTarget},
+    target_configs::IDDict{AbstractConfig},
+    constraints::IDDict{AbstractConstraint},
     modes::IDDict{<:ModeConfig},
     dt::Float64,
     time::Dates.DateTime;
@@ -96,10 +96,11 @@ end
 
 Items to do:
 
-- [ ] Should pass around mode tables (`Dict{IDType, ModeConfig}`), target state tables (`Dict{IDType, <:AbstractState}`), target config tables (`Dict{IDType, <:AbstractConfig}`), and constraint tables (`Dict{IDType, <:AbstractConstraint}`).
+- [x] Should pass around mode tables (`Dict{IDType, ModeConfig}`), target state tables (`Dict{IDType, <:AbstractState}`), target config tables (`Dict{IDType, <:AbstractConfig}`), and constraint tables (`Dict{IDType, <:AbstractConstraint}`).
   - Instead of `Vector`s of the same.
   - If a vector is passed, I just need to filter it to find IDType. If a table is passed, I can query by ID directly.
   - There is a small amount of filtering/finding/mapping by type (e.g. to find the `SunState`). That can still be done by iterating on the `Dict` values.
-- [ ] Rewrite all the signatures in `simulate.jl` based on the `high_level()` and `low_level()` prototypes defined above.
-- [ ] Rewrite (and reconsider) `mode_table`. It currently is a matrix of targets (rows) by modes (cols) indicating mode dependency on targets. This is complicated by the introduction of constraints. It's not part of a clean function signature. If we kept it, we would instead multiple by `[visibilities; constraints_satisfied]` boolean vector.
+- [x] Rewrite all the signatures in `simulate.jl` based on the `high_level()` and `low_level()` prototypes defined above.
+- [x] Rewrite (and reconsider) `mode_table`. It currently is a matrix of targets (rows) by modes (cols) indicating mode dependency on targets. This is complicated by the introduction of constraints. It's not part of a clean function signature. If we kept it, we would instead multiple by `[visibilities; constraints_satisfied]` boolean vector.
 - [ ] Remove `params` from signature. There's a `Dict` in `SimConfig` that is meant to hold stuff like this.
+- [ ] Revise `step_satellite` to `step!()`
