@@ -109,10 +109,23 @@ function handle_new_config(path::AbstractString)
 end
 
 function monitor(; config_path::AbstractString = joinpath("config", "example.jsonc"))
-    # server = Sockets.listen(unixsockname)
-    sock = Sockets.UDPSocket()
-    # bind(sock, unixsockname)
-    sock = Sockets.connect(unixsockname)
+    # # with unix socket:
+    # sock = Sockets.connect(unixsockname)
+
+    # with udp:
+    # sock = Sockets.UDPSocket()
+    # bind(sock, udpsockname, udpmonport; reuseaddr = true)
+
+    # udp:
+    # sock =
+    #     setup_client(Sockets.@ip_str("127.0.0.1"), 9994, Sockets.@ip_str("127.0.0.1"), 9999)
+
+    # tcp
+    # sock = setup_client(Sockets.@ip_str("127.0.0.1"), 9994)
+
+    # unix
+    sock = setup_client("/tmp/soap_out.sock")
+
     textureprefix = joinpath("assets")
     textures = [
         "map_diffuse.png",
@@ -378,10 +391,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     data_lines = lines!(ax_data, ob_time, data, color = :black, linewidth = 1)
     rSO3_lines = lines!(ax_dbug, ob_time, rSO3, color = :black, linewidth = 1)
 
-    # println("server: ", server)
-    # sock = Sockets.accept(server)
-    println("socket: ", sock)
-
     nrate = 100_000
     secondly_debug = 2.0
     bytecount = 0
@@ -430,7 +439,9 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                     println("oh no!!!")
                 end
                 writeval = packetize(PlayMessage(UInt8(play[])), 0x0000, UInt64(1))
-                write(sock, writeval)
+                # write(sock, writeval)
+                # Sockets.send(sock, udpsockname, udpcoreport, writeval)
+                write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
             end
@@ -438,7 +449,9 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 sleep[] = max(0, sleep[] - sleepstep)
                 writeval = packetize(RateMessage(UInt8(sleep[])), 0x0000, UInt64(2))
                 cmd_label[] = "<<"
-                write(sock, writeval)
+                # write(sock, writeval)
+                # Sockets.send(sock, udpsockname, udpcoreport, writeval)
+                write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
             end
@@ -446,7 +459,9 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 sleep[] = min(0xff, sleep[] + sleepstep)
                 writeval = packetize(RateMessage(UInt8(sleep[])), 0x0000, UInt64(2))
                 cmd_label[] = ">>"
-                write(sock, writeval)
+                # write(sock, writeval)
+                # Sockets.send(sock, udpsockname, udpcoreport, writeval)
+                write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
             end
@@ -455,7 +470,9 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 pert = PerturbationMessage(Vec3d(1e-2*rand(3)), 5, Vec3d(0.0), 1)
                 writeval = packetize(pert, 0x0000, UInt64(0))
                 cmd_label[] = "kicked!"
-                write(sock, writeval)
+                # write(sock, writeval)
+                # Sockets.send(sock, udpsockname, udpcoreport, writeval)
+                write_transport(sock, writeval)
                 notify(cmd_label)
             end
             if event.key == Keyboard.escape
@@ -512,7 +529,9 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 do_quit[] = true
                 cmd_label[] = "exiting..."
                 writeval = packetize(QuitMessage(0x01), 0x0000, UInt64(2))
-                write(sock, writeval)
+                # write(sock, writeval)
+                # Sockets.send(sock, udpsockname, udpcoreport, writeval)
+                write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
             end
@@ -521,14 +540,35 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     while true
         try
-            nbhead = readbytes!(sock, headbuff)
-            type, flags, len = behead(headbuff)
+            # msg = Sockets.recv(sock)
+            # type, flags, len = behead(msg)
+            # count, simdata = des(type, msg[(8+1):end])
 
-            buff = zeros(UInt8, len)
-            nbdata = readbytes!(sock, buff)
-            count, simdata = des(type, buff)
 
-            # println(typeof(simdata))
+            ret = read_transport(sock)
+            type = ret[1]
+            cmd = nothing
+            flags = 0
+            len = 0
+            simdata = nothing
+            if type<:AbstractState
+                flags = ret[2]
+                len = ret[3]
+                cmd = ret[4]
+                simdata = ret[5]
+            end
+
+            # println("found type: $(type) with len: $(len)")
+            # println(simdata)
+
+            # # unix socket:
+            # nbhead = readbytes!(sock, headbuff)
+            # type, flags, len = behead(headbuff)
+
+            # buff = zeros(UInt8, len)
+            # nbdata = readbytes!(sock, buff)
+            # count, simdata = des(type, buff)
+
 
             if typeof(simdata) === PositionState # unused
                 circshift!(pos_ECI[], -1)
@@ -542,6 +582,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             elseif typeof(simdata) === AttitudeState # unused
             # GLMakie.rotate!(body_mesh, dcm_to_quat(simdata.attitude_ECI_Body'))
             # GLMakie.translate!(body_mesh, pos_ECI[][end])
+
+            elseif typeof(simdata) === MagneticFieldState # unimplemented
 
             elseif typeof(simdata) === EarthState
                 q_ECEF_ECI[] = dcm_to_quat(simdata.attitude_ECI_ECEF)
@@ -665,7 +707,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 # debuginfo[] = rich("target: ", "nothin")
                 notify(debuginfo)
             else
-                # println("unknown message type")
+                println("unknown message type $(typeof(simdata))")
             end
 
             # update all groundstations

@@ -1,16 +1,21 @@
 module OpenSOAP
 import Serialization
 import Sockets
+import JSON
 import InlineStrings
 using GeometryBasics
 import Dates
+import DateFormats
 import PrettyTables
 import SatelliteToolboxTransformations,
-    SatelliteToolboxBase, SatelliteToolboxCelestialBodies
+    SatelliteToolboxBase, SatelliteToolboxCelestialBodies, SatelliteToolboxGeomagneticField
 import Base: +, *, @kwdef, reinterpret, show
 import Makie
 
 global const unixsockname = "/tmp/soap_out.sock"
+global const udpsockname = Sockets.@ip_str("127.0.0.1")
+global const udpmonport = UInt16(9999)
+global const udpcoreport = UInt16(9996)
 global const IDType = UInt16
 const IDDict = Dict{IDType,T} where {T}
 global const eop = SatelliteToolboxTransformations.fetch_iers_eop()
@@ -58,6 +63,10 @@ export worm,
     packetize,
     unpacketize,
     behead,
+    setup_server,
+    setup_client,
+    read_transport,
+    write_transport,
     step_orbit,
     step_satellite,
     step_earth,

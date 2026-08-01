@@ -197,7 +197,7 @@ function des(::Type{T}, raw::Vector{UInt8})::Tuple{UInt64,T} where {T<:AbstractS
     return (c[1], T(fields...))
 end
 
-function desmsg(::Type{T}, raw::Vector{UInt8})::T where {T<:ControlMessage}
+function des(::Type{T}, raw::Vector{UInt8})::T where {T<:ControlMessage}
     agg = 1
     fields = []
     for t in T.types
@@ -217,6 +217,8 @@ function packetize(payload::NetworkMessage, flags::UInt16, counter::UInt64)::Vec
         payload_B = ser(counter, payload)
     elseif typeof(payload) <: ControlMessage
         payload_B = ser(payload)
+    else
+        throw("Unknown payload type.")
     end
     payload_len = UInt16(length(payload_B))
 
@@ -280,5 +282,121 @@ function unpacketize(data::Vector{UInt8}, headless = true)
     # end
 
     # later, return the flags + other stuff as well:
+
+end
+
+mutable struct SocketWrapper{
+    T<:Union{Sockets.UDPSocket,Sockets.TCPSocket,Base.PipeEndpoint},
+}
+    sock::T
+    dest::Union{Nothing,Tuple{Sockets.IPv4,UInt16}}
+end
+
+function setup_server(addr::String)
+    server = Sockets.listen(addr)
+    sock = Sockets.accept(server)
+    return SocketWrapper{Base.PipeEndpoint}(sock, nothing)
+end
+
+function setup_server(addr::Sockets.IPv4, port::Int)
+    server = Sockets.listen(addr, port)
+    sock = Sockets.accept(server)
+    return SocketWrapper{Sockets.TCPSocket}(sock, nothing)
+end
+
+function setup_server(
+    addr::Sockets.IPv4,
+    port::Int,
+    dest_addr::Sockets.IPv4,
+    dest_port::Int,
+)
+
+    sock = Sockets.UDPSocket()
+    bind(sock, addr, port, reuseaddr = true)
+    return SocketWrapper{Sockets.UDPSocket}(sock, (dest_addr, dest_port))
+end
+
+function setup_client(addr::String)
+    sock = Sockets.connect(addr)
+    return SocketWrapper{Base.PipeEndpoint}(sock, nothing)
+end
+
+function setup_client(addr::Sockets.IPv4, port::Int)
+    sock = Sockets.connect(addr, port)
+    return SocketWrapper{Sockets.TCPSocket}(sock, nothing)
+end
+
+function setup_client(
+    addr::Sockets.IPv4,
+    port::Int,
+    dest_addr::Sockets.IPv4,
+    dest_port::Int,
+)
+
+    sock = Sockets.UDPSocket()
+    bind(sock, addr, port; reuseaddr = true)
+    return SocketWrapper{Sockets.UDPSocket}(sock, (dest_addr, dest_port))
+end
+
+# I/O methods:
+function read_transport(sock::SocketWrapper{Base.PipeEndpoint})
+    headbuff = zeros(UInt8, 8)
+    nbhead = readbytes!(sock.sock, headbuff)
+    type, flags, len = behead(headbuff)
+
+    buff = zeros(UInt8, len)
+    nbdata = readbytes!(sock.sock, buff)
+    res = des(type, buff)
+    if type <: AbstractState
+        count = res[1]
+        data = res[2]
+        return type, len, flags, count, data
+    else
+        return type, len, flags, res
+    end
+end
+
+function write_transport(sock::SocketWrapper{Base.PipeEndpoint}, msg::Vector{UInt8})
+    write(sock.sock, msg)
+end
+
+function read_transport(sock::SocketWrapper{Sockets.TCPSocket})
+    headbuff = zeros(UInt8, 8)
+    nbhead = readbytes!(sock.sock, headbuff)
+    type, flags, len = behead(headbuff)
+
+    buff = zeros(UInt8, len)
+    nbdata = readbytes!(sock.sock, buff)
+    res = des(type, buff)
+    if type <: AbstractState
+        count = res[1]
+        data = res[2]
+        return type, len, flags, count, data
+    else
+        return type, len, flags, res
+    end
+end
+
+function write_transport(sock::SocketWrapper{Sockets.TCPSocket}, msg::Vector{UInt8})
+    write(sock.sock, msg)
+end
+
+function read_transport(sock::SocketWrapper{Sockets.UDPSocket})
+    msg = Sockets.recv(sock.sock)
+    type, flags, len = behead(msg)
+    res = des(type, msg[(8+1):end])
+    if type <: AbstractState
+        count = res[1]
+        data = res[2]
+        return type, len, flags, count, data
+    else
+        return type, len, flags, res
+    end
+
+    return flags, count, data
+end
+
+function write_transport(sock::SocketWrapper{Sockets.UDPSocket}, msg::Vector{UInt8})
+    Sockets.send(sock.sock, sock.dest[1], sock.dest[2], msg)
 
 end

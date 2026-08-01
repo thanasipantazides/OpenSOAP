@@ -1,10 +1,4 @@
-import Dates
-import JSON
-import SatelliteToolboxCelestialBodies,
-    SatelliteToolboxTransformations, SatelliteToolboxBase, SatelliteToolboxGeomagneticField
-import Makie
-import DateFormats
-using GeometryBasics
+
 
 function lookup_target_config(
     name::AbstractString,

@@ -36,10 +36,15 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
     # sun_state = filter(x -> isa(x, SunState), targets)[1]
     sun_state = findfirst(x -> isa(x, SunState), targets)
 
-    server = Sockets.listen(unixsockname)
-    println("waiting for connection...")
-    sock = Sockets.accept(server)
-    println("connected!")
+    # udp 
+    # sock =
+    #     setup_server(Sockets.@ip_str("127.0.0.1"), 9999, Sockets.@ip_str("127.0.0.1"), 9994)
+
+    # tcp 
+    # sock = setup_server(Sockets.@ip_str("127.0.0.1"), 9994)
+
+    # unix
+    sock = setup_server("/tmp/soap_out.sock")
 
     play = Ref(UInt8(0x01))
     do_quit = Ref(QuitMessage(0x00))
@@ -53,99 +58,154 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
 
     # handle received commands
     # todo: factor this out of the run() function.
-    @async while isopen(sock)
-        if !eof(sock)
-            # read the header
-            nbhead = readbytes!(sock, headbuff)
-            type, flags, len = behead(headbuff)
+    # @async while isopen(sock)
+    # if !eof(sock)
 
-            # read the rest
-            buff = zeros(UInt8, len)
-            nbdata = readbytes!(sock, buff)
-            cmd = desmsg(type, buff)
+    @async while do_quit[].message != 0x01
+        # read the header
+        # nbhead = readbytes!(sock, headbuff)
+        # type, flags, len = behead(headbuff)
 
-            if type === PlayMessage
-                play[] = cmd.message
-                println("> playing: ", play[])
-            end
-            if type === RateMessage
-                playrate[] = cmd.message
-                println("> resting: ", playrate[])
-            end
-            if type === PerturbationMessage
-                perturbation[] = cmd
-                println("> perturbing: ", cmd)
-            end
-        else
-            close(sock)
-            # do_quit[] = true
-            # return
+
+        # read the rest
+        # buff = zeros(UInt8, len)
+        # nbdata = readbytes!(sock, buff)
+        # cmd = desmsg(type, buff)
+
+        # msg = Sockets.recv(sock)
+        # println(msg)
+        # type, flags, len = behead(msg)
+        # count, simdata = desmsg(type, msg[(8+1):end])
+
+        ret = read_transport(sock)
+        println(ret)
+        type = ret[1]
+        cmd = nothing
+        len = 0
+        flags = nothing
+        if type<:ControlMessage
+            flags = ret[2]
+            len = ret[3]
+            cmd = ret[4]
         end
+
+        if type === PlayMessage
+            play[] = cmd.message
+            println("> playing: ", play[])
+        end
+        if type === RateMessage
+            playrate[] = cmd.message
+            println("> resting: ", playrate[])
+        end
+        if type === PerturbationMessage
+            perturbation[] = cmd
+            println("> perturbing: ", cmd)
+        end
+        # else
+        # close(sock)
+        # do_quit[] = true
+        # return
+        # end
     end
 
     time = sim.start_time
 
+    println(sock)
+    # println(sock)
+    # while !(isopen(sock))
+    #     sleep(0.1)
+    # end
     # run simulation
-    while isopen(sock)
-        if do_quit[].message == 0x01
-            close(sock)
-            return 1
-        end
-        if play[] == 0x01
-            # update all dynamic systems
-            step_sim!(
-                sat,
-                sat_config,
-                targets,
-                target_configs,
-                constraints,
-                modes,
-                sim.time_step,
-                time,
-                params;
-                exog = perturbation[],
-            )
+    while do_quit[].message != 0x01 #isopen(sock)
+        # if do_quit[].message == 0x01
+        #     close(sock)
+        #     return 1
+        # end
+        try
+            if play[] == 0x01
+                # update all dynamic systems
+                step_sim!(
+                    sat,
+                    sat_config,
+                    targets,
+                    target_configs,
+                    constraints,
+                    modes,
+                    sim.time_step,
+                    time,
+                    params;
+                    exog = perturbation[],
+                )
 
-            # update timestep
-            time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
+                # update timestep
+                time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
 
-            # serialize and send data
-            sat_data = packetize(sat, 0x0000, sim.step_count)
-            write(sock, sat_data)
-            # # earth_data = packetize(earth_state, 0x0000, sim.step_count)
-            # write(sock, earth_data)
-            # sun_data = packetize(sun_state, 0x0000, sim.step_count)
-            # write(sock, sun_data)
+                # serialize and send data
+                sat_data = packetize(sat, 0x0000, sim.step_count)
+                # println(sat_data)
 
-            for target in values(targets)
-                t_data = packetize(target, 0x0000, sim.step_count)
-                write(sock, t_data)
-            end
+                # # unix sock:
+                # write(sock, sat_data)
 
-            # control playback rate
-            if playrate[] != 0xff
-                if playrate[] == 0x00
-                    sleep(0.01)
-                elseif sim.step_count % playrate[] == 0
-                    sleep(0.01)
+                # UDP version:
+                # Sockets.send(sock, udpsockname, udpmonport, sat_data)
+
+
+                write_transport(sock, sat_data)
+
+                # # earth_data = packetize(earth_state, 0x0000, sim.step_count)
+                # write(sock, earth_data)
+                # sun_data = packetize(sun_state, 0x0000, sim.step_count)
+                # write(sock, sun_data)
+
+                # println("sent!")
+                # sleep(0.25)
+                for target in values(targets)
+                    t_data = packetize(target, 0x0000, sim.step_count)
+
+                    # # unix sock:
+                    # write(sock, t_data)
+
+                    # the UDP way:
+                    # Sockets.send(sock, udpsockname, udpmonport, t_data)
+
+
+                    write_transport(sock, t_data)
                 end
-            end
 
-            if perturbation[].moment_duration > 0 && norm(perturbation[].moment_Body) != 0.0
-                perturbation[].moment_duration -= 1
+                # control playback rate
+                if playrate[] != 0xff
+                    if playrate[] == 0x00
+                        sleep(0.01)
+                    elseif sim.step_count % playrate[] == 0
+                        sleep(0.01)
+                    end
+                end
+
+                if perturbation[].moment_duration > 0 &&
+                   norm(perturbation[].moment_Body) != 0.0
+                    perturbation[].moment_duration -= 1
+                else
+                    perturbation[].moment_Body = Vec3d(0.0)
+                end
             else
-                perturbation[].moment_Body = Vec3d(0.0)
+                sleep(0.1)
             end
-        else
-            sleep(0.1)
+
+            sim.step_count += 1
+        catch e
+            if typeof(e) <: InterruptException
+                println("exiting...")
+                close(sock)
+                return -1
+            else
+                rethrow(e)
+                flush(sock)
+                continue
+            end
         end
-
-        sim.step_count += 1
-
         # print(" "*worm(counter%pwidth, pwidth)*" \r")
     end
-
-    close(sock)
 end
 
 # same as run(), but no socket communication. For testing.
@@ -153,21 +213,6 @@ function run_free(; config_path::AbstractString = joinpath("config", "example.js
 
     sim, sat, sat_config, targets, target_configs, constraints, modes =
         load_config(Dict(load_jsonc(config_path)))
-
-
-    # println("targets:")
-    # [println(m) for m in targets]
-
-    # println("target_configs:")
-    # [println(m) for m in target_configs]
-
-    # println("constraints:")
-    # [println(m) for m in constraints]
-    println("modes:")
-    [println(m) for m in modes]
-    # for tc in target_configs
-    #     println(tc)
-    # end
 
     inertia_B = diagm([5, 10, 13])*1e-2
 
