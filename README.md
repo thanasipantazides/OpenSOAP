@@ -51,9 +51,24 @@ This will probably precompile for a while. This happens the first time you run s
 julia> main()
 ```
 
-You should see a display like the one further up this page. Press the `h` key for a help menu.
+You should see a display like the one further up this page. Press the `h` key for a help menu:
 
-To exit, press `q` in the viewer.
+### Actions in the monitor
+
+| Key          | Action                           |
+| ------------ | -------------------------------- |
+| `h`          | show help                        |
+| `v`          | verbose                          |
+| `q`          | quit                             |
+| `e`          | change earth texture             |
+| `f`          | show/hide Body frame             |
+| `l`          | show/hide labels                 |
+| `p`          | change camera projection         |
+| `k`          | perturb attitude (check control) |
+| `spacebar`   | play/pause                       |
+| `left/right` | slower/faster                    |
+
+To exit, press `q` in the viewer. Maybe also ctrl-C in the REPL.
 
 ## Details
 
