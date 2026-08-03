@@ -121,10 +121,10 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     #     setup_client(Sockets.@ip_str("127.0.0.1"), 9994, Sockets.@ip_str("127.0.0.1"), 9999)
 
     # tcp
-    # sock = setup_client(Sockets.@ip_str("127.0.0.1"), 9994)
+    sock = setup_client(Sockets.@ip_str("127.0.0.1"), 9995)
 
     # unix
-    sock = setup_client("/tmp/soap_out.sock")
+    # sock = setup_client("/tmp/soap_out.sock")
 
     textureprefix = joinpath("assets")
     textures = [
@@ -439,30 +439,24 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                     println("oh no!!!")
                 end
                 writeval = packetize(PlayMessage(UInt8(play[])), 0x0000, UInt64(1))
-                # write(sock, writeval)
-                # Sockets.send(sock, udpsockname, udpcoreport, writeval)
                 write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
             end
             if event.key == Keyboard.left && play[] == 0x01
                 sleep[] = max(0, sleep[] - sleepstep)
-                writeval = packetize(RateMessage(UInt8(sleep[])), 0x0000, UInt64(2))
                 cmd_label[] = "<<"
-                # write(sock, writeval)
-                # Sockets.send(sock, udpsockname, udpcoreport, writeval)
-                write_transport(sock, writeval)
-                println("> sent command ", writeval, " to server")
+                # writeval = packetize(RateMessage(UInt8(sleep[])), 0x0000, UInt64(2))
+                # write_transport(sock, writeval)
+                # println("> sent command ", writeval, " to server")
                 notify(cmd_label)
             end
             if event.key == Keyboard.right && play[] == 0x01
                 sleep[] = min(0xff, sleep[] + sleepstep)
-                writeval = packetize(RateMessage(UInt8(sleep[])), 0x0000, UInt64(2))
                 cmd_label[] = ">>"
-                # write(sock, writeval)
-                # Sockets.send(sock, udpsockname, udpcoreport, writeval)
-                write_transport(sock, writeval)
-                println("> sent command ", writeval, " to server")
+                # writeval = packetize(RateMessage(UInt8(sleep[])), 0x0000, UInt64(2))
+                # write_transport(sock, writeval)
+                # println("> sent command ", writeval, " to server")
                 notify(cmd_label)
             end
             if event.key == Keyboard.k && play[] == 0x01
@@ -470,8 +464,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 pert = PerturbationMessage(Vec3d(1e-2*rand(3)), 5, Vec3d(0.0), 1)
                 writeval = packetize(pert, 0x0000, UInt64(0))
                 cmd_label[] = "kicked!"
-                # write(sock, writeval)
-                # Sockets.send(sock, udpsockname, udpcoreport, writeval)
                 write_transport(sock, writeval)
                 notify(cmd_label)
             end
@@ -529,8 +521,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 do_quit[] = true
                 cmd_label[] = "exiting..."
                 writeval = packetize(QuitMessage(0x01), 0x0000, UInt64(2))
-                # write(sock, writeval)
-                # Sockets.send(sock, udpsockname, udpcoreport, writeval)
                 write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
@@ -540,35 +530,21 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     while true
         try
-            # msg = Sockets.recv(sock)
-            # type, flags, len = behead(msg)
-            # count, simdata = des(type, msg[(8+1):end])
-
-
             ret = read_transport(sock)
             type = ret[1]
-            cmd = nothing
+            count = 0
             flags = 0
             len = 0
-            simdata = nothing
+            simdata = UInt8[]
             if type<:AbstractState
-                flags = ret[2]
-                len = ret[3]
-                cmd = ret[4]
+                len = ret[2]
+                flags = ret[3]
+                count = ret[4]
                 simdata = ret[5]
+                if count % (2+sleep[]) != 0
+                    continue
+                end
             end
-
-            # println("found type: $(type) with len: $(len)")
-            # println(simdata)
-
-            # # unix socket:
-            # nbhead = readbytes!(sock, headbuff)
-            # type, flags, len = behead(headbuff)
-
-            # buff = zeros(UInt8, len)
-            # nbdata = readbytes!(sock, buff)
-            # count, simdata = des(type, buff)
-
 
             if typeof(simdata) === PositionState # unused
                 circshift!(pos_ECI[], -1)
@@ -583,7 +559,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             # GLMakie.rotate!(body_mesh, dcm_to_quat(simdata.attitude_ECI_Body'))
             # GLMakie.translate!(body_mesh, pos_ECI[][end])
 
-            elseif typeof(simdata) === MagneticFieldState # unimplemented
+            elseif typeof(simdata) === MagneticFieldState
+                target_states[simdata.id] = simdata
 
             elseif typeof(simdata) === EarthState
                 q_ECEF_ECI[] = dcm_to_quat(simdata.attitude_ECI_ECEF)
@@ -665,8 +642,15 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 elseif isa(target_states[simdata.target], GroundState)
                     target_dir_ECI[] =
                         [simdata.position_ECI, target_states[simdata.target].position_ECI]
+
+                elseif isa(target_states[simdata.target], MagneticFieldState)
+                    target_dir_ECI[] = [
+                        simdata.position_ECI,
+                        simdata.position_ECI +
+                        0.33*6371e3*normalize(target_states[simdata.target].direction_ECI),
+                    ]
                 else
-                    println("unidentified target type: ", typeof(mode_conf.target_type))
+                    println("unidentified target type!")
                 end
 
                 angular_velocity_ECI[] = [
@@ -749,7 +733,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         catch e
             if typeof(e) <: InterruptException
                 println("exiting...")
-                close(sock)
+                close(sock.sock)
                 GLMakie.closeall()
                 return -1
             else

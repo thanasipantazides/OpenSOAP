@@ -247,6 +247,14 @@ struct LLAConstraint<:AbstractConstraint
     alt::Point2d
 end
 
+function reference_direction(target::T) where {T<:Union{SunState,GroundState}}
+    return target.position_ECI
+end
+
+function reference_direction(target::MagneticFieldState)
+    return target.direction_ECI
+end
+
 function +(a::PositionState, b::PositionState)
     if a.elapsed_time != b.elapsed_time
         error("can only add States with the same time")

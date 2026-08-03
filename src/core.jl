@@ -41,10 +41,10 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
     #     setup_server(Sockets.@ip_str("127.0.0.1"), 9999, Sockets.@ip_str("127.0.0.1"), 9994)
 
     # tcp 
-    # sock = setup_server(Sockets.@ip_str("127.0.0.1"), 9994)
+    sock = setup_server(Sockets.@ip_str("127.0.0.1"), 9995)
 
     # unix
-    sock = setup_server("/tmp/soap_out.sock")
+    # sock = setup_server("/tmp/soap_out.sock")
 
     play = Ref(UInt8(0x01))
     do_quit = Ref(QuitMessage(0x00))
@@ -58,27 +58,10 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
 
     # handle received commands
     # todo: factor this out of the run() function.
-    # @async while isopen(sock)
-    # if !eof(sock)
 
     @async while do_quit[].message != 0x01
-        # read the header
-        # nbhead = readbytes!(sock, headbuff)
-        # type, flags, len = behead(headbuff)
-
-
-        # read the rest
-        # buff = zeros(UInt8, len)
-        # nbdata = readbytes!(sock, buff)
-        # cmd = desmsg(type, buff)
-
-        # msg = Sockets.recv(sock)
-        # println(msg)
-        # type, flags, len = behead(msg)
-        # count, simdata = desmsg(type, msg[(8+1):end])
 
         ret = read_transport(sock)
-        println(ret)
         type = ret[1]
         cmd = nothing
         len = 0
@@ -111,11 +94,7 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
     time = sim.start_time
 
     println(sock)
-    # println(sock)
-    # while !(isopen(sock))
-    #     sleep(0.1)
-    # end
-    # run simulation
+
     while do_quit[].message != 0x01 #isopen(sock)
         # if do_quit[].message == 0x01
         #     close(sock)
@@ -142,34 +121,10 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
 
                 # serialize and send data
                 sat_data = packetize(sat, 0x0000, sim.step_count)
-                # println(sat_data)
-
-                # # unix sock:
-                # write(sock, sat_data)
-
-                # UDP version:
-                # Sockets.send(sock, udpsockname, udpmonport, sat_data)
-
-
                 write_transport(sock, sat_data)
 
-                # # earth_data = packetize(earth_state, 0x0000, sim.step_count)
-                # write(sock, earth_data)
-                # sun_data = packetize(sun_state, 0x0000, sim.step_count)
-                # write(sock, sun_data)
-
-                # println("sent!")
-                # sleep(0.25)
                 for target in values(targets)
                     t_data = packetize(target, 0x0000, sim.step_count)
-
-                    # # unix sock:
-                    # write(sock, t_data)
-
-                    # the UDP way:
-                    # Sockets.send(sock, udpsockname, udpmonport, t_data)
-
-
                     write_transport(sock, t_data)
                 end
 
@@ -196,11 +151,10 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
         catch e
             if typeof(e) <: InterruptException
                 println("exiting...")
-                close(sock)
+                close(sock.sock)
                 return -1
             else
                 rethrow(e)
-                flush(sock)
                 continue
             end
         end

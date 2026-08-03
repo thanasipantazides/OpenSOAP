@@ -43,22 +43,6 @@ function step_orbit(x::PositionState, dt::Float64)::PositionState
     return res
 end
 
-function euler_rigid_dynamics(x::AttitudeState, dt::Float64, params)::AttitudeState
-    dw =
-        params["I_Body_inv"]*(
-            -cross(
-                x.angular_velocity_ECI_Body,
-                params["I_Body"]*x.angular_velocity_ECI_Body,
-            )
-        )
-    return AttitudeState(x.elapsed_time, dw, x.attitude_ECI_Body)
-end
-
-function euler_rigid_dynamics(w_Body::Vec3d, pert_M_Body::Vec3d, dt::Float64, params)::Vec3d
-    dw = params["I_Body_inv"]*(pert_M_Body - cross(w_Body, params["I_Body"]*w_Body))
-    return dw
-end
-
 function euler_rigid_dynamics(
     angular_velocity_ECI_Body::Vec3d,
     control_M_Body::Vec3d,
@@ -119,31 +103,11 @@ function step_attitude!(
     x.net_moment_Body = control_M_Body + pert_M_Body
 end
 
-function step_attitude(x::AttitudeState, dt::Float64, params)::AttitudeState
-    # RK4
-    k1 = euler_rigid_dynamics(x, dt, params)
-    k2 = euler_rigid_dynamics(x + dt/2*k1, dt, params)
-    k3 = euler_rigid_dynamics(x + dt/2*k2, dt, params)
-    k4 = euler_rigid_dynamics(x + dt*k3, dt, params)
-    res = x + dt/6*(k1 + 2*(k2 + k3) + k4)
-    # res = x + dt*k1
-    res.elapsed_time = x.elapsed_time + dt
-    res.attitude_ECI_Body = x.attitude_ECI_Body*exp(cross(x.angular_velocity_ECI_Body)*dt)
-    return res
-end
-
 function step_satellite(x::SatelliteState, dt::Float64, params)::SatelliteState
     newx = x
 
     ext_M_Body = Vec3d(0.0)
     ext_F_ECI = Vec3d(0.0)
-
-    # RK4
-    # wk1 = euler_rigid_dynamics(x.angular_velocity_ECI_Body,             ext_M_Body, dt, params)
-    # wk2 = euler_rigid_dynamics(x.angular_velocity_ECI_Body + dt/2*wk1,  ext_M_Body, dt, params)
-    # wk3 = euler_rigid_dynamics(x.angular_velocity_ECI_Body + dt/2*wk2,  ext_M_Body, dt, params)
-    # wk4 = euler_rigid_dynamics(x.angular_velocity_ECI_Body + dt*wk3,    ext_M_Body, dt, params)
-    # newx.angular_velocity_ECI_Body = x.angular_velocity_ECI_Body + dt/6*(wk1 + 2*(wk2 + wk3) + wk4)
 
     wr1, wv1 = dynamics_orbit(x.position_ECI, x.velocity_ECI, ext_F_ECI, dt, params)
     wr2, wv2 = dynamics_orbit(
@@ -284,68 +248,6 @@ function step!(
     set_visibility!(mag, mag_config, sat, sat_config, t, modes)
 end
 
-# function step_earth(x::EarthState, dt::Float64, t::Dates.DateTime, params)::EarthState
-#     x.elapsed_time += dt
-#     x.attitude_ECI_ECEF = SatelliteToolboxTransformations.r_eci_to_ecef(
-#         SatelliteToolboxTransformations.J2000(),
-#         SatelliteToolboxTransformations.ITRF(),
-#         SatelliteToolboxBase.date_to_jd(t),
-#         eop,
-#     )
-#     return x
-# end
-
-# function step_sun(
-#     sun::SunState,
-#     x::SatelliteState,
-#     dt::Float64,
-#     t::Dates.DateTime,
-#     params,
-# )::SunState
-#     sun.elapsed_time += dt
-#     sun.position_ECI = SatelliteToolboxCelestialBodies.sun_position_mod(t)
-#     # todo: replace hardcode Earth radius
-#     sun.visible =
-#         sun.position_ECI'*x.position_ECI / norm(sun.position_ECI) / norm(x.position_ECI) >
-#         -sqrt(
-#             max(
-#                 0,
-#                 1 -
-#                 (SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS)^2 / norm(x.position_ECI)^2,
-#             ),
-#         )
-#     return sun
-# end
-
-# function step_targets(
-#     targets::Vector{GroundState},
-#     x::SatelliteState,
-#     dt::Float64,
-#     t::Dates.DateTime,
-#     params,
-# )::Vector{GroundState}
-#     min_priority = UInt16(0xffff)
-#     for target in targets
-#         target.elapsed_time += dt
-#         target.position_ECI =
-#             SatelliteToolboxTransformations.r_ecef_to_eci(
-#                 SatelliteToolboxTransformations.ITRF(),
-#                 SatelliteToolboxTransformations.J2000(),
-#                 SatelliteToolboxBase.date_to_jd(t),
-#                 eop,
-#             )*SatelliteToolboxTransformations.geodetic_to_ecef(target.position_LLA...)
-#         # todo: replace hardcoded mask with params dict
-#         if (x.position_ECI - target.position_ECI)'*target.position_ECI /
-#            norm(x.position_ECI - target.position_ECI) / norm(target.position_ECI) >
-#            cos(pi/2 - 20*pi/180)
-#             target.visible = true
-#         else
-#             target.visible = false
-#         end
-#     end
-#     return targets
-# end
-
 function clamp_attitude_align!(
     sat::SatelliteState,
     sat_config::SatelliteConfig,
@@ -384,7 +286,8 @@ function clamp_attitude_align!(
     if isnothing(target)
         to_ECI = from_Body
     else
-        to_ECI = normalize(target.position_ECI - sat.position_ECI)
+        println(target)
+        to_ECI = normalize(reference_direction(target) - sat.position_ECI)
     end
 
     if isnan(norm(from_Body)) || isnan(norm(to_ECI)) # cases where either vector is NaN or zero
