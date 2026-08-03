@@ -42,6 +42,7 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
 
     # tcp 
     sock = setup_server(Sockets.@ip_str("127.0.0.1"), 9995)
+    println("connected.")
 
     # unix
     # sock = setup_server("/tmp/soap_out.sock")
@@ -84,16 +85,13 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
             perturbation[] = cmd
             println("> perturbing: ", cmd)
         end
-        # else
-        # close(sock)
-        # do_quit[] = true
-        # return
-        # end
+        if type === QuitMessage
+            do_quit[] = 0x01
+            close(sock.sock)
+        end
     end
 
     time = sim.start_time
-
-    println(sock)
 
     while do_quit[].message != 0x01 #isopen(sock)
         # if do_quit[].message == 0x01

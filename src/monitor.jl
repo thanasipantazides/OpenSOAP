@@ -109,22 +109,6 @@ function handle_new_config(path::AbstractString)
 end
 
 function monitor(; config_path::AbstractString = joinpath("config", "example.jsonc"))
-    # # with unix socket:
-    # sock = Sockets.connect(unixsockname)
-
-    # with udp:
-    # sock = Sockets.UDPSocket()
-    # bind(sock, udpsockname, udpmonport; reuseaddr = true)
-
-    # udp:
-    # sock =
-    #     setup_client(Sockets.@ip_str("127.0.0.1"), 9994, Sockets.@ip_str("127.0.0.1"), 9999)
-
-    # tcp
-    sock = setup_client(Sockets.@ip_str("127.0.0.1"), 9995)
-
-    # unix
-    # sock = setup_client("/tmp/soap_out.sock")
 
     textureprefix = joinpath("assets")
     textures = [
@@ -404,7 +388,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     play = Ref(UInt8(0x01))
     do_quit = Ref(false)
-    sleep = Ref(UInt8(0x01))
+    sleep_size = Ref(UInt8(0x01))
     last_proj = Ref(UInt8(0x00))
     sleepstep = 8
     # play = 0x01
@@ -425,6 +409,18 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         end
     end
 
+    # moving the socket I/O stuff down here.
+
+    # udp:
+    # sock =
+    #     setup_client(Sockets.@ip_str("127.0.0.1"), 9994, Sockets.@ip_str("127.0.0.1"), 9999)
+
+    # tcp
+    sock = setup_client(Sockets.@ip_str("127.0.0.1"), 9995)
+
+    # unix
+    # sock = setup_client("/tmp/soap_out.sock")
+
     # handle keyboard input:
     on(events(ax).keyboardbutton) do event
         if event.action == Keyboard.press || event.action == Keyboard.repeat
@@ -444,19 +440,19 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 notify(cmd_label)
             end
             if event.key == Keyboard.left && play[] == 0x01
-                sleep[] = max(0, sleep[] - sleepstep)
+                sleep_size[] = max(0, sleep_size[] - sleepstep)
                 cmd_label[] = "<<"
-                # writeval = packetize(RateMessage(UInt8(sleep[])), 0x0000, UInt64(2))
-                # write_transport(sock, writeval)
-                # println("> sent command ", writeval, " to server")
+                writeval = packetize(RateMessage(UInt8(sleep_size[])), 0x0000, UInt64(2))
+                write_transport(sock, writeval)
+                println("> sent command ", writeval, " to server")
                 notify(cmd_label)
             end
             if event.key == Keyboard.right && play[] == 0x01
-                sleep[] = min(0xff, sleep[] + sleepstep)
+                sleep_size[] = min(0xff, sleep_size[] + sleepstep)
                 cmd_label[] = ">>"
-                # writeval = packetize(RateMessage(UInt8(sleep[])), 0x0000, UInt64(2))
-                # write_transport(sock, writeval)
-                # println("> sent command ", writeval, " to server")
+                writeval = packetize(RateMessage(UInt8(sleep_size[])), 0x0000, UInt64(2))
+                write_transport(sock, writeval)
+                println("> sent command ", writeval, " to server")
                 notify(cmd_label)
             end
             if event.key == Keyboard.k && play[] == 0x01
@@ -541,9 +537,12 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 flags = ret[3]
                 count = ret[4]
                 simdata = ret[5]
-                if count % (2+sleep[]) != 0
-                    continue
-                end
+                # if count % (1+sleep_size[]) == 0
+                #     continue
+                # end
+                # if count % (2+sleep[]) != 0
+                #     continue
+                # end
             end
 
             if typeof(simdata) === PositionState # unused
@@ -846,19 +845,9 @@ function write_csv(
     sim, sat, sat_config, target_states, target_configs, constraints, modes =
         handle_new_config(infile)
 
-    # mode_table = tabulate(modes)
-    # target_state_table = tabulate(targets)
-    # target_config_table = tabulate(target_configs)
 
     start_time = sim.start_time
-    # met = Observable(Float64(0.0))
-    # met_label = lift(met) do l
-    #     return format_clock(l, start_time)
-    # end
 
-
-    # println("server: ", server)
-    # sock = Sockets.accept(server)
     println("socket: ", sock)
 
     nrate = 100_000
@@ -876,26 +865,6 @@ function write_csv(
     sleep = Ref(UInt8(0xff))
     last_proj = Ref(UInt8(0x00))
     sleepstep = 8
-
-    # handle file drag/drop
-
-    # handle keyboard input:
-    # on(events(ax).keyboardbutton) do event
-    #     if event.action == Keyboard.press || event.action == Keyboard.repeat
-    #         if event.key == Keyboard.space
-    #             if play[] == 0x01
-    #                 play[] = 0x00
-    #             elseif play[] == 0x00
-    #                 play[] = 0x01
-    #             else
-    #                 println("oh no!!!")
-    #             end
-    #             writeval = packetize(PlayMessage(UInt8(play[])), 0x0000, UInt64(1))
-    #             write(sock, writeval)
-    #             println("> sent command ", writeval, " to server")
-    #         end
-    #     end
-    # end
 
     header = "t [UTC], t [MET], t [s], counter [], pos_ECI_x [m], pos_ECI_y [m], pos_ECI_z [m], vel_ECI_x [m], vel_ECI_y [m], vel_ECI_z [m], att_ECI_Body_11 [], attitude_ECI_Body_12 [], attitude_ECI_Body_13 [], attitude_ECI_Body_21 [], attitude_ECI_Body_22 [], attitude_ECI_Body_23 [], attitude_ECI_Body_31 [], attitude_ECI_Body_32 [], attitude_ECI_Body_33 [], battery [J], data storage [b], mode, target"
     last_count = 0

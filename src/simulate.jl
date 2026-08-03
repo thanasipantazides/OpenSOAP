@@ -286,7 +286,6 @@ function clamp_attitude_align!(
     if isnothing(target)
         to_ECI = from_Body
     else
-        println(target)
         to_ECI = normalize(reference_direction(target) - sat.position_ECI)
     end
 

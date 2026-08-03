@@ -301,6 +301,7 @@ end
 function setup_server(addr::Sockets.IPv4, port::Int)
     server = Sockets.listen(addr, port)
     sock = Sockets.accept(server)
+    Sockets.nagle(sock, false)
     return SocketWrapper{Sockets.TCPSocket}(sock, nothing)
 end
 
