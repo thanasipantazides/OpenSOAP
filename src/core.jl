@@ -38,18 +38,18 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
 
     # udp 
     # sock =
-    #     setup_server(Sockets.@ip_str("127.0.0.1"), 9999, Sockets.@ip_str("127.0.0.1"), 9994)
+    #     setup_server(SOAP_HOST, SOAP_CORE_PORT, SOAP_HOST, SOAP_MON_PORT)
 
     # tcp 
-    sock = setup_server(Sockets.@ip_str("127.0.0.1"), 9995)
+    sock = setup_server(SOAP_HOST, SOAP_CORE_PORT)
     println("connected.")
 
     # unix
-    # sock = setup_server("/tmp/soap_out.sock")
+    # sock = setup_server(SOAP_UNIX_SOCK)
 
     play = Ref(UInt8(0x01))
     do_quit = Ref(QuitMessage(0x00))
-    playrate = Ref(UInt8(0xff))
+    playrate = Ref(UInt8(0x01))
     perturbation = Ref(PerturbationMessage(Vec3d(0.0), 0.0, Vec3d(0.0), 0.0))
     # perturb_moment = Ref(Vec3d(0.0))
     # perturb_moment_count = Ref(UInt32(0x0000))

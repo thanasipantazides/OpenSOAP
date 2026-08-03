@@ -12,10 +12,11 @@ import SatelliteToolboxTransformations,
 import Base: +, *, @kwdef, reinterpret, show
 import Makie
 
-global const unixsockname = "/tmp/soap_out.sock"
-global const udpsockname = Sockets.@ip_str("127.0.0.1")
-global const udpmonport = UInt16(9999)
-global const udpcoreport = UInt16(9996)
+global const SOAP_UNIX_SOCK = "/tmp/soap_out.sock"
+global const SOAP_HOST = Sockets.@ip_str("127.0.0.1")
+global const SOAP_MON_PORT = UInt16(9999)
+global const SOAP_CORE_PORT = UInt16(9993)
+global const SOAP_MAX_BUFF_LEN = 2048
 global const IDType = UInt16
 const IDDict = Dict{IDType,T} where {T}
 global const eop = SatelliteToolboxTransformations.fetch_iers_eop()
@@ -57,7 +58,6 @@ export worm,
     TargetConfig,
     SimConfig,
     find_config,
-    mode_table,
     ser,
     des,
     packetize,

@@ -384,13 +384,14 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     packlen = length(packetize(SatelliteState(), 0x0000, UInt64(0)))
     packlen = 1
     headbuff = zeros(UInt8, 8)
-    buff = zeros(UInt8, packlen)
 
     play = Ref(UInt8(0x01))
     do_quit = Ref(false)
     sleep_size = Ref(UInt8(0x01))
     last_proj = Ref(UInt8(0x00))
     sleepstep = 8
+
+    rx_buff = zeros(UInt8, SOAP_MAX_BUFF_LEN)
     # play = 0x01
 
     disable_makie_cam_keyboard!(cameracontrols(ax.scene))
@@ -413,13 +414,13 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     # udp:
     # sock =
-    #     setup_client(Sockets.@ip_str("127.0.0.1"), 9994, Sockets.@ip_str("127.0.0.1"), 9999)
+    #     setup_client(SOAP_HOST, SOAP_MON_PORT, SOAP_HOST, SOAP_CORE_PORT)
 
     # tcp
-    sock = setup_client(Sockets.@ip_str("127.0.0.1"), 9995)
+    sock = setup_client(SOAP_HOST, SOAP_CORE_PORT)
 
     # unix
-    # sock = setup_client("/tmp/soap_out.sock")
+    # sock = setup_client(SOAP_UNIX_SOCK)
 
     # handle keyboard input:
     on(events(ax).keyboardbutton) do event
@@ -526,7 +527,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     while true
         try
-            ret = read_transport(sock)
+            ret = read_transport(sock; buff = rx_buff)
             type = ret[1]
             count = 0
             flags = 0
@@ -708,14 +709,9 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
             bytecount += len + 8
 
-            # @async GLMakie.reset_limits!(ax_batt)
-            # @async GLMakie.reset_limits!(ax_stor)
-            @async GLMakie.reset_limits!(ax_power)
-            @async GLMakie.reset_limits!(ax_data)
-
             if do_quit[]
                 println("exiting...")
-                close(sock)
+                close(sock.sock)
                 GLMakie.closeall()
                 return 1
             end
@@ -728,6 +724,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 last_met = met[]
                 lastratetime = time()
                 bytecount = 0
+                GLMakie.reset_limits!(ax_power)
+                GLMakie.reset_limits!(ax_data)
             end
         catch e
             if typeof(e) <: InterruptException

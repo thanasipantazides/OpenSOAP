@@ -298,7 +298,7 @@ function setup_server(addr::String)
     return SocketWrapper{Base.PipeEndpoint}(sock, nothing)
 end
 
-function setup_server(addr::Sockets.IPv4, port::Int)
+function setup_server(addr::Sockets.IPv4, port::Integer)
     server = Sockets.listen(addr, port)
     sock = Sockets.accept(server)
     Sockets.nagle(sock, false)
@@ -307,9 +307,9 @@ end
 
 function setup_server(
     addr::Sockets.IPv4,
-    port::Int,
+    port::Integer,
     dest_addr::Sockets.IPv4,
-    dest_port::Int,
+    dest_port::Integer,
 )
 
     sock = Sockets.UDPSocket()
@@ -322,16 +322,16 @@ function setup_client(addr::String)
     return SocketWrapper{Base.PipeEndpoint}(sock, nothing)
 end
 
-function setup_client(addr::Sockets.IPv4, port::Int)
+function setup_client(addr::Sockets.IPv4, port::Integer)
     sock = Sockets.connect(addr, port)
     return SocketWrapper{Sockets.TCPSocket}(sock, nothing)
 end
 
 function setup_client(
     addr::Sockets.IPv4,
-    port::Int,
+    port::Integer,
     dest_addr::Sockets.IPv4,
-    dest_port::Int,
+    dest_port::Integer,
 )
 
     sock = Sockets.UDPSocket()
@@ -340,14 +340,16 @@ function setup_client(
 end
 
 # I/O methods:
-function read_transport(sock::SocketWrapper{Base.PipeEndpoint})
-    headbuff = zeros(UInt8, 8)
-    nbhead = readbytes!(sock.sock, headbuff)
-    type, flags, len = behead(headbuff)
+function read_transport(
+    sock::SocketWrapper{Base.PipeEndpoint};
+    buff = zeros(UInt8, SOAP_MAX_BUFF_LEN),
+)
 
-    buff = zeros(UInt8, len)
-    nbdata = readbytes!(sock.sock, buff)
-    res = des(type, buff)
+    nbhead = readbytes!(sock.sock, buff, 8)
+    type, flags, len = behead(buff[1:8])
+
+    nbdata = readbytes!(sock.sock, buff, len)
+    res = des(type, buff[1:len])
     if type <: AbstractState
         count = res[1]
         data = res[2]
@@ -361,14 +363,15 @@ function write_transport(sock::SocketWrapper{Base.PipeEndpoint}, msg::Vector{UIn
     write(sock.sock, msg)
 end
 
-function read_transport(sock::SocketWrapper{Sockets.TCPSocket})
-    headbuff = zeros(UInt8, 8)
-    nbhead = readbytes!(sock.sock, headbuff)
-    type, flags, len = behead(headbuff)
+function read_transport(
+    sock::SocketWrapper{Sockets.TCPSocket};
+    buff = zeros(UInt8, SOAP_MAX_BUFF_LEN),
+)
+    nbhead = readbytes!(sock.sock, buff, 8)
+    type, flags, len = behead(buff[1:8])
 
-    buff = zeros(UInt8, len)
-    nbdata = readbytes!(sock.sock, buff)
-    res = des(type, buff)
+    nbdata = readbytes!(sock.sock, buff, len)
+    res = des(type, buff[1:len])
     if type <: AbstractState
         count = res[1]
         data = res[2]
@@ -382,7 +385,10 @@ function write_transport(sock::SocketWrapper{Sockets.TCPSocket}, msg::Vector{UIn
     write(sock.sock, msg)
 end
 
-function read_transport(sock::SocketWrapper{Sockets.UDPSocket})
+function read_transport(
+    sock::SocketWrapper{Sockets.UDPSocket};
+    buff = zeros(UInt8, SOAP_MAX_BUFF_LEN),
+)
     msg = Sockets.recv(sock.sock)
     type, flags, len = behead(msg)
     res = des(type, msg[(8+1):end])
