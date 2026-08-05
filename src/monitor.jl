@@ -2,6 +2,8 @@ using GLMakie
 import Makie
 import Printf, FileIO
 
+@enum CamState free body_focused nadir
+
 function basis()
     return [Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec3d(0.0, 0.0, 1.0)]
 end
@@ -144,6 +146,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         - f:\tshow/hide Body frame
         - l:\tshow/hide labels
         - p:\tchange camera projection
+        - c:\tchange camera focus
         - k:\tperturb attitude
         - spacebar:\t\tplay/pause
         - left/right:\tslower/faster
@@ -198,6 +201,9 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         tellwidth = false,
         tellheight = false,
     )
+
+    cam = cameracontrols(ax.scene)
+
     ax_batt =
         Axis(fig[1, 4], ylabel = "battery [%]", ylabelfont = "OCR-B", tellwidth = false)
     ylims!(ax_batt, 0.0, 102)
@@ -251,7 +257,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     lines!(ax, pos_ECI, color = tailcolor, linewidth = 2)
     lines!(ax, target_dir_ECI, color = tailcolor, linewidth = 1)
     lines!(ax, moment_ECI, color = :black, linewidth = 2)
-    lines!(ax, angular_velocity_ECI, color = :purple, linewidth = 1)
+    lines!(ax, angular_velocity_ECI, color = :orange, linewidth = 1)
     earth_mesh = GLMakie.surface!(
         ax,
         X_ECI,
@@ -390,6 +396,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     do_quit = Ref(false)
     sleep_size = Ref(UInt8(0x01))
     last_proj = Ref(UInt8(0x00))
+    cam_state = Ref(UInt8(0x00))
     sleepstep = 8
 
     rx_buff = zeros(UInt8, SOAP_MAX_BUFF_LEN)
@@ -411,7 +418,23 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         end
     end
 
-    # moving the socket I/O stuff down here.
+    # camera controls
+    on(pos_ECI) do pos
+        if CamState(cam_state[]) == body_focused
+            cam.lookat[] = pos[end]
+            update_cam!(ax.scene, cam)
+        elseif CamState(cam_state[]) == nadir
+            cam.lookat[] = pos[end]
+            cam.eyeposition[] = 2*pos[end]
+            update_cam!(ax.scene, cam)
+        elseif CamState(cam_state[]) == free
+            # no op 
+        else
+            @warn "undefined camera state!"
+        end
+    end
+
+    # I/O:
 
     # udp:
     # sock =
@@ -488,20 +511,21 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             end
             if event.key == Keyboard.p
                 if last_proj[] == 0x00
-                    cam = cameracontrols(ax.scene)
                     cam.settings.projectiontype=Makie.Orthographic
                     update_cam!(ax.scene, cam)
                     last_proj[] = 0x01
                     cmd_label[] = "projection: orthographic"
                     notify(cmd_label)
                 elseif last_proj[] == 0x01
-                    cam = cameracontrols(ax.scene)
                     cam.settings.projectiontype=Makie.Perspective
                     update_cam!(ax.scene, cam)
                     last_proj[] = 0x00
                     cmd_label[] = "projection: perspective"
                     notify(cmd_label)
                 end
+            end
+            if event.key == Keyboard.c
+                cam_state[] = (cam_state[] + 1) % length(instances(CamState))
             end
             if event.key == Keyboard.v
                 debugvisible[] = !debugvisible[]
@@ -539,12 +563,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 flags = ret[3]
                 count = ret[4]
                 simdata = ret[5]
-                # if count % (1+sleep_size[]) == 0
-                #     continue
-                # end
-                # if count % (2+sleep[]) != 0
-                #     continue
-                # end
             end
 
             if typeof(simdata) === PositionState # unused
