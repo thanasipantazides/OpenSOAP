@@ -285,8 +285,12 @@ function clamp_attitude_align!(
     to_ECI = Vec3d(0.0)
     if isnothing(target)
         to_ECI = from_Body
+    elseif target isa GroundState || target isa SunState
+        to_ECI = normalize(target.position_ECI - sat.position_ECI)
+    elseif target isa MagneticFieldState
+        to_ECI = normalize(target.direction_ECI)
     else
-        to_ECI = normalize(reference_direction(target) - sat.position_ECI)
+        throw(TypeError("unknown target type $typeof(target)"))
     end
 
     if isnan(norm(from_Body)) || isnan(norm(to_ECI)) # cases where either vector is NaN or zero

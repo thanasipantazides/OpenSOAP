@@ -196,6 +196,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         show_axis = false,
         scenekw = (lights = [al, dl],),
         tellwidth = false,
+        tellheight = false,
     )
     ax_batt =
         Axis(fig[1, 4], ylabel = "battery [%]", ylabelfont = "OCR-B", tellwidth = false)
@@ -646,8 +647,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 elseif isa(target_states[simdata.target], MagneticFieldState)
                     target_dir_ECI[] = [
                         simdata.position_ECI,
-                        simdata.position_ECI +
-                        0.33*6371e3*normalize(target_states[simdata.target].direction_ECI),
+                        0.33*6371e3*normalize(target_states[simdata.target].direction_ECI) + simdata.position_ECI,
                     ]
                 else
                     println("unidentified target type!")
