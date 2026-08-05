@@ -2,7 +2,7 @@ using GLMakie
 import Makie
 import Printf, FileIO
 
-@enum CamState free body_focused nadir
+@enum CamState free body_focused target_focused nadir
 
 function basis()
     return [Vec3d(1.0, 0.0, 0.0), Vec3d(0.0, 1.0, 0.0), Vec3d(0.0, 0.0, 1.0)]
@@ -131,12 +131,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     sim, sat, sat_config, target_states, target_configs, constraints, modes =
         handle_new_config(config_path)
 
-
-    # mode_table = tabulate(modes)
-    # target_state_table = tabulate(targets)
-    # target_config_table = tabulate(target_configs)
-
-
     helpstring = """
         Commands:
         - h:\tshow help
@@ -174,6 +168,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     data = Observable([NaN for k = 1:obbufflen])
     rSO3 = Observable([NaN for k = 1:obbufflen])
     target_dir_ECI = Observable([Point3d(NaN) for k = 1:2])
+    target_rel_ECI = Observable(Vec3d(NaN))
     q_ECEF_ECI = Observable(Makie.Quaternion(0.0, 0.0, 0.0, 1.0))
     pos_sun_ECI = Observable(Vec3d(0.0))
     moment_ECI = Observable([Vec3d(NaN) for k = 1:2])
@@ -257,7 +252,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     lines!(ax, pos_ECI, color = tailcolor, linewidth = 2)
     lines!(ax, target_dir_ECI, color = tailcolor, linewidth = 1)
     lines!(ax, moment_ECI, color = :black, linewidth = 2)
-    lines!(ax, angular_velocity_ECI, color = :orange, linewidth = 1)
+    lines!(ax, angular_velocity_ECI, color = :grey, linewidth = 1)
     earth_mesh = GLMakie.surface!(
         ax,
         X_ECI,
@@ -427,6 +422,12 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             cam.lookat[] = pos[end]
             cam.eyeposition[] = 2*pos[end]
             update_cam!(ax.scene, cam)
+        elseif CamState(cam_state[]) == target_focused
+            cam.lookat[] = pos[end]
+            cam.eyeposition[] =
+                (pos[end] + normalize(target_rel_ECI[])) -
+                6371e3*normalize(target_rel_ECI[])
+            update_cam!(ax.scene, cam)
         elseif CamState(cam_state[]) == free
             # no op 
         else
@@ -526,6 +527,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             end
             if event.key == Keyboard.c
                 cam_state[] = (cam_state[] + 1) % length(instances(CamState))
+                cmd_label[] = "camera: $(string(CamState(cam_state[])))"
+                notify(cmd_label)
             end
             if event.key == Keyboard.v
                 debugvisible[] = !debugvisible[]
@@ -552,6 +555,13 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     while true
         try
+            if do_quit[]
+                println("exiting...")
+                close(sock.sock)
+                GLMakie.closeall()
+                return 1
+            end
+
             ret = read_transport(sock; buff = rx_buff)
             type = ret[1]
             count = 0
@@ -639,10 +649,9 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 GLMakie.translate!(body_frame, pos_ECI[][end])
 
                 # update color and target direction
-                # for m in modes
-                #     if m.id =
-                # end
                 mode_conf = modes[findfirst(x -> x.id == simdata.mode, modes)]
+                target_rel_ECI[] = simdata.attitude_ECI_Body*mode_conf.direction_Body
+                notify(target_rel_ECI)
 
                 # mode_conf = mode_table[simdata.mode]
                 tailcolor[] = mode_conf.color
@@ -726,13 +735,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             notify(gs_col)
 
             bytecount += len + 8
-
-            if do_quit[]
-                println("exiting...")
-                close(sock.sock)
-                GLMakie.closeall()
-                return 1
-            end
 
             if time() - lastratetime > secondly_debug
                 Printf.@printf "rate: %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
