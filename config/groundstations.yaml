@@ -1,0 +1,198 @@
+# - altitude: 15.0
+#   elevation: 10.0
+#   latitude: 68.360833
+#   longitude: -133.729722
+#   name: Inuvik
+#   operator: KSAT
+# - altitude: 136.0
+#   elevation: 10.0
+#   latitude: 64.843611
+#   longitude: -147.723056
+#   name: Fairbanks
+#   operator: KSAT
+# - altitude: 93.0
+#   elevation: 10.0
+#   latitude: 34.05
+#   longitude: -118.25
+#   name: Los Angeles
+#   operator: KSAT
+# - altitude: 4207.0
+#   elevation: 10.0
+#   latitude: 19.6
+#   longitude: -155.5
+#   name: Hawaii
+#   operator: KSAT
+# - altitude: 2.0
+#   elevation: 10.0
+#   latitude: 8.983333
+#   longitude: -79.516667
+#   name: Panama
+#   operator: KSAT
+# - altitude: 34.0
+#   elevation: 10.0
+#   latitude: -53.166667
+#   longitude: -70.933333
+#   name: Punta Arenas
+#   operator: KSAT
+# - altitude: 5.0
+#   elevation: 10.0
+#   latitude: 64.181389
+#   longitude: -51.694167
+#   name: Nuuk
+#   operator: KSAT
+# - altitude: 5.0
+#   elevation: 10.0
+#   latitude: 70.983333
+#   longitude: -8.533333
+#   name: Jan Mayen
+#   operator: KSAT
+- altitude: 1718.0
+  elevation: 10.0
+  latitude: 78.22
+  longitude: 15.65
+  name: Svalbard
+  operator: KSAT
+# - altitude: 5.0
+#   elevation: 10.0
+#   latitude: 69.65455
+#   longitude: 18.96366
+#   name: "Troms\xF8"
+#   operator: KSAT
+# - altitude: 9.0
+#   elevation: 10.0
+#   latitude: 70.370278
+#   longitude: 31.110556
+#   name: "Vard\xF8"
+#   operator: KSAT
+# - altitude: 690.0
+#   elevation: 10.0
+#   latitude: 38.683333
+#   longitude: -4.116667
+#   name: Puertollano
+#   operator: KSAT
+# - altitude: 5.0
+#   elevation: 10.0
+#   latitude: 53.35
+#   longitude: -6.260278
+#   name: Dublin
+#   operator: AWS
+# - altitude: 17.0
+#   elevation: 10.0
+#   latitude: 59.616111
+#   longitude: 16.552778
+#   name: "V\xE4ster\xE5s"
+#   operator: AWS
+# - altitude: 1590.0
+#   elevation: 10.0
+#   latitude: -33.925278
+#   longitude: 18.423889
+#   name: Cape Town
+#   operator: AWS
+# - altitude: 5.0
+#   elevation: 10.0
+#   latitude: 26.05
+#   longitude: 50.483333
+#   name: Zallaq
+#   operator: AWS
+# - altitude: 5.0
+#   elevation: 10.0
+#   latitude: -33.867778
+#   longitude: 151.21
+#   name: Sidney
+#   operator: AWS
+# - altitude: 34.0
+#   elevation: 10.0
+#   latitude: -53.166667
+#   longitude: -70.933333
+#   name: Punta Arenas
+#   operator: AWS
+# - altitude: 2744.0
+#   elevation: 10.0
+#   latitude: 37.56
+#   longitude: 126.99
+#   name: Seoul
+#   operator: AWS
+# - altitude: 275.0
+#   elevation: 10.0
+#   latitude: 40.109167
+#   longitude: -83.140278
+#   name: Dublin (US)
+#   operator: AWS
+# - altitude: 94.0
+#   elevation: 10.0
+#   latitude: 45.839722
+#   longitude: -119.700556
+#   name: Boardman
+#   operator: AWS
+# - altitude: 16.0
+#   elevation: 10.0
+#   latitude: 21.334722
+#   longitude: -158.080833
+#   name: Kapolei
+#   operator: AWS
+# - altitude: 5.0
+#   elevation: 10.0
+#   latitude: 1.283333
+#   longitude: 103.833333
+#   name: Singapore
+#   operator: AWS
+# - altitude: 120.0
+#   elevation: 10.0
+#   latitude: 45.466944
+#   longitude: 9.19
+#   name: Milan
+#   operator: Leaf Space
+# - altitude: 9.0
+#   elevation: 10.0
+#   latitude: 51.897222
+#   longitude: -8.47
+#   name: Cork
+#   operator: Leaf Space
+# - altitude: 690.0
+#   elevation: 10.0
+#   latitude: 38.683333
+#   longitude: -4.116667
+#   name: Puertollano
+#   operator: Leaf Space
+# - altitude: 194.0
+#   elevation: 10.0
+#   latitude: 36.99739
+#   longitude: -25.13726
+#   name: Santa Maria
+#   operator: Leaf Space
+# - altitude: 16.0
+#   elevation: 10.0
+#   latitude: -46.5281
+#   longitude: 168.3792
+#   name: Awarua
+#   operator: Leaf Space
+# - altitude: 462.0
+#   elevation: 10.0
+#   latitude: 7.27423
+#   longitude: 80.72485
+#   name: Sri Lanka
+#   operator: Leaf Space
+# - altitude: 540.0
+#   elevation: 10.0
+#   latitude: -32.962
+#   longitude: 138.84949
+#   name: Peterborough
+#   operator: Leaf Space
+# - altitude: 270.0
+#   elevation: 10.0
+#   latitude: -29.01042
+#   longitude: 115.34171
+#   name: Nangetty
+#   operator: Leaf Space
+- altitude: 53.0
+  elevation: 10.0
+  latitude: 65.64737
+  longitude: -20.24609
+  name: Iceland
+  operator: Leaf Space
+# - altitude: 18.0
+#   elevation: 10.0
+#   latitude: 56.462
+#   longitude: -2.9707
+#   name: Dundee
+#   operator: RBC Signals

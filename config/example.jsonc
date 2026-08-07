@@ -1,0 +1,402 @@
+{
+  // need to add initial conditions, timestep, etc.
+  "simulation": {
+    "timestep": 1.0, // seconds
+    "initial": {
+      "time": {
+        "year": 2026,
+        "month": 6,
+        "day": 21,
+        "hour": 4,
+        "minute": 28,
+        "second": 12
+      },
+      "position": [
+        6871e3,
+        0.0,
+        0.0
+      ],
+      // "velocity": [0.0,3808.3,6596.1],
+      // "velocity": [0.0, 4368.68, 6239.12], // 55 deg inc
+      // "velocity": [0.0, 3218.90, 6902.94], // 65 deg inc
+      // "velocity": [0.0, 1971.30, 7357.03], // 75 deg inc
+      "velocity": [
+        0.0,
+        531.3,
+        7598.0
+      ], // 85 deg inc
+      // "velocity": [0.0, -663.83,  7587.57], // 95 deg inc
+      "angular_velocity": [
+        0.01,
+        0.001,
+        0.001
+      ],
+      "attitude": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "attitude_major": "row", // how to read in "attitude"
+      "battery": 151200.0,
+      "storage": 1e9
+    },
+    "enable_J2": true // include the J2 perturbation in orbit propagation
+  },
+  "spacecraft": {
+    "name": "IMPAX",
+    "mechanical": {
+      "mass": 12.4, // kg
+      "inertia": [
+        [
+          0.05,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.01,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.13
+        ]
+      ],
+      "inertia_major": "row" // how to read in "inertia"
+    },
+    "control": {
+      "mode": "pd",
+      "max_slew_rate": 2e-2, // rad/s
+      "wheels": {
+        "axes": [
+          [
+            0.8944,
+            0.0,
+            0.4473
+          ],
+          [
+            0.0,
+            0.8944,
+            0.4473
+          ],
+          [
+            -0.8944,
+            0.0,
+            0.4473
+          ],
+          [
+            0.0,
+            -0.8944,
+            0.4473
+          ]
+        ],
+        "torques": [
+          2.0e-3,
+          2.0e-3,
+          2.0e-3,
+          2.0e-3
+        ],
+        "momenta": [
+          5.7e-3,
+          5.7e-3,
+          5.7e-3,
+          5.7e-3
+        ]
+      }
+    },
+    "power": {
+      "capacity": 302400.0,
+      "panels": [
+        {
+          "normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "efficiency": 0.295,
+          "area": 0.12072
+        } // can define other panels in other directions if needed.
+      ]
+    },
+    "data": {
+      "capacity": 8e9,
+      "antennas": [
+        {
+          "normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "power": 10.0
+        } // can define other antennas in other directions if needed.
+      ]
+    },
+    "modes": {
+      "charging": {
+        "direction_Body": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "targets": [
+          "sun"
+        ], // elaborated elsewhere.
+        "constraints": [
+          ""
+        ],
+        "priority": 5,
+        "color": [
+          255,
+          201,
+          74
+        ],
+        "power_consumption": 13.4,
+        "data_production": 8e5
+      },
+      "idle": {
+        "direction_Body": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "targets": [
+          ""
+        ],
+        "constraints": [
+          ""
+        ],
+        "priority": 100,
+        "color": [
+          42,
+          133,
+          255
+        ],
+        "power_consumption": 13.4,
+        "data_production": 8e3
+      },
+      "downlink": {
+        "direction_Body": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "targets": [
+          "Punta Arenas",
+          "Blonduos",
+          "Svalbard",
+          "Fairbanks",
+          "Singapore"
+        ], // union aka OR aka ANY of the above will do.
+        "constraints": [
+          ""
+        ],
+        "policy": "any",
+        "priority": 2,
+        "color": [
+          42,
+          133,
+          255
+        ],
+        "power_consumption": 30.4,
+        "data_production": 8e3
+      },
+      "science-north": {
+        "direction_Body": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "targets": [
+          "B-align"
+        ],
+        "constraints": [
+          "north35"
+        ],
+        "priority": 3,
+        "color": [
+          215,
+          165,
+          255
+        ],
+        "power_consumption": 18.48,
+        "data_production": 13.66e3
+      },
+      "science-south": {
+        "direction_Body": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "targets": [
+          "B-align"
+        ],
+        "constraints": [
+          "south35"
+        ],
+        "priority": 4,
+        "color": [
+          215,
+          165,
+          255
+        ],
+        "power_consumption": 18.48,
+        "data_production": 13.66e3
+      }
+    },
+    "targets": [
+      {
+        "name": "earth",
+        "direction": {
+          "source": "ecef"
+        }
+      },
+      {
+        "name": "sun",
+        "direction": {
+          "source": "ephemeris.sun" // or "igrf" or "body" or "lvlh" or "ground-fixed" or "celestial-fixed"
+        },
+        "irradiance": 1360.0 // W per m2
+      },
+      {
+        "name": "v-align", // if you want to line up a body vector with the local velocity direction
+        "direction": {
+          "source": "lvlh",
+          "value": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      {
+        "name": "B-align", // to line up a body vector with the local magnetic field
+        "direction": {
+          "source": "igrf",
+          "normalization": "none", // or "zenith" or "none"
+          "model_order": 4 // IGRF model order
+        }
+      },
+      {
+        "name": "Blonduos", // "Blönduós"
+        "direction": {
+          "source": "lla.position",
+          "value": [
+            65.647,
+            -20.246,
+            53.0
+          ]
+        },
+        "priority": 1,
+        "elevation_mask": 10.0, // deg
+        "data_consumption": 17e6 // bits per second
+      },
+      {
+        "name": "Punta Arenas",
+        "direction": {
+          "source": "lla.position",
+          "value": [
+            -53.1667,
+            -70.933,
+            34.0
+          ]
+        },
+        "priority": 1,
+        "elevation_mask": 10.0,
+        "data_consumption": 10e6 // bits per second
+      },
+      {
+        "name": "Fairbanks",
+        "direction": {
+          "source": "lla.position",
+          "value": [
+            64.843611,
+            -147.723056,
+            136.0
+          ]
+        },
+        "priority": 1,
+        "elevation_mask": 10.0,
+        "data_consumption": 10e6 // bits per second
+      },
+      {
+        "name": "Svalbard",
+        "direction": {
+          "source": "lla.position",
+          "value": [
+            78.22,
+            15.65,
+            1718.0
+          ]
+        },
+        "priority": 1,
+        "elevation_mask": 10.0,
+        "data_consumption": 10e6 // bits per second
+      },
+      {
+        "name": "Singapore",
+        "direction": {
+          "source": "lla.position",
+          "value": [
+            1.283333,
+            103.833333,
+            5.0
+          ]
+        },
+        "priority": 1,
+        "elevation_mask": 10.0,
+        "data_consumption": 10e6 // bits per second
+      }
+    ],
+    "constraints": [
+      {
+        "name": "north35",
+        "source": "lla.constraint",
+        "value": {
+          "lat": [
+            35,
+            90
+          ],
+          "lon": [
+            "-Inf",
+            "Inf"
+          ],
+          "alt": [
+            0,
+            "Inf"
+          ]
+        }
+      },
+      {
+        "name": "south35",
+        "source": "lla.constraint",
+        "value": {
+          "lat": [
+            -90,
+            -35
+          ],
+          "lon": [
+            "-Inf",
+            "Inf"
+          ],
+          "alt": [
+            0,
+            "Inf"
+          ]
+        }
+      }
+    ]
+  }
+}
