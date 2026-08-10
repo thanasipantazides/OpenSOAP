@@ -1,4 +1,65 @@
 
+"""
+    load_jsonc(path::AbstractString)
+
+Load a JSON file with comments, then parse using JSON.jl.
+"""
+function load_jsonc(path::AbstractString)
+
+    raw = read(path, String)
+    remove = UnitRange{Int64}[]
+    nodouble = nostart = false
+    k = 1
+    while k < length(raw)
+        # get start of next comment.
+        kstart = findnext("//", raw, k)
+        if isnothing(kstart) # try /* */ style comments instead.
+            kstart = findnext("/*", raw, k)
+            if !isnothing(kstart)
+                kend = findnext("*/", raw, kstart[1])
+                if isnothing(kend) # file ends in this comment, no newline
+                    kend = length(raw)
+                end
+                push!(remove, UnitRange{Int64}(kstart[1], max(kend)))
+                k = kend+1
+            else # no more comments
+                break
+            end
+        else
+            kend = findnext('\n', raw, kstart[2])
+            if isnothing(kend) # file ends in this comment, no newline
+                kend = length(raw)
+            end
+            # remove from the start of the comment to kend
+            push!(remove, UnitRange{Int64}(kstart[1], max(kend)-1))
+            k = kend+1
+        end
+    end
+
+    # get complement of the ranges to remove to see what to keep
+    keep = UnitRange{Int64}[]
+    last = UnitRange{Int64}(-1:0)
+    for (k, r) in enumerate(remove)
+        if k == 1
+            push!(keep, 1:(r.start-1))
+        else
+            push!(keep, (last.stop+1):(r.start-1))
+        end
+        last = r
+    end
+    # N.B. the sizeof(str) != length(str) due to Unicode. Watch out!
+    if last.stop+1 < sizeof(raw)
+        push!(keep, (last.stop+1):(sizeof(raw)))
+    end
+
+    # keep the contents in a new string, to parse:
+    sout = ""
+    for k in keep
+        sout *= raw[k]
+    end
+
+    return JSON.parse(sout)
+end
 
 function lookup_target_config(
     name::AbstractString,
@@ -20,7 +81,7 @@ function lookup_target(s::T) where {T<:AbstractString}
     elseif lowercase(s) == "igrf"
         # @warn("IGRF tracking unimplemented, skipping")
         return MagneticFieldState
-    elseif lowercase(s) == "lla"
+    elseif lowercase(s) == "lla.position"
         return GroundState
     elseif lowercase(s) == "lla.constraint"
         return LLAConstraint
@@ -170,68 +231,6 @@ function default_mode_list()
         # ModeConfig(0x0104, "science",   Nothing,    Makie.RGBAf(206/255, 155/255, 255/255), 20.0, 10e3, Vec3d(1.0,0.0,0.0))
     ]
     return modelist
-end
-
-"""
-    load_jsonc(path::AbstractString)
-
-Load a JSON file with comments, then parse using JSON.jl.
-"""
-function load_jsonc(path::AbstractString)
-
-    raw = read(path, String)
-    remove = UnitRange{Int64}[]
-    nodouble = nostart = false
-    k = 1
-    while k < length(raw)
-        # get start of next comment.
-        kstart = findnext("//", raw, k)
-        if isnothing(kstart) # try /* */ style comments instead.
-            kstart = findnext("/*", raw, k)
-            if !isnothing(kstart)
-                kend = findnext("*/", raw, kstart[1])
-                if isnothing(kend) # file ends in this comment, no newline
-                    kend = length(raw)
-                end
-                push!(remove, UnitRange{Int64}(kstart[1], max(kend)))
-                k = kend+1
-            else # no more comments
-                break
-            end
-        else
-            kend = findnext('\n', raw, kstart[2])
-            if isnothing(kend) # file ends in this comment, no newline
-                kend = length(raw)
-            end
-            # remove from the start of the comment to kend
-            push!(remove, UnitRange{Int64}(kstart[1], max(kend)-1))
-            k = kend+1
-        end
-    end
-
-    # get complement of the ranges to remove to see what to keep
-    keep = UnitRange{Int64}[]
-    last = UnitRange{Int64}(-1:0)
-    for (k, r) in enumerate(remove)
-        if k == 1
-            push!(keep, 1:(r.start-1))
-        else
-            push!(keep, (last.stop+1):(r.start-1))
-        end
-        last = r
-    end
-    # N.B. the sizeof(str) != length(str) due to Unicode. Watch out!
-    if last.stop+1 < sizeof(raw)
-        push!(keep, (last.stop+1):(sizeof(raw)))
-    end
-
-    # keep the contents in a new string, to parse:
-    sout = ""
-    for k in keep
-        sout *= raw[k]
-    end
-
-    return JSON.parse(sout)
 end
 
 function next_id!(id_set::Set{IDType})

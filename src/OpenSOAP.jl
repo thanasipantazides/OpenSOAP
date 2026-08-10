@@ -2,6 +2,7 @@ module OpenSOAP
 import Serialization
 import Sockets
 import JSON
+import RelocatableFolders
 import InlineStrings
 using GeometryBasics
 import Dates
@@ -12,14 +13,15 @@ import SatelliteToolboxTransformations,
 import Base: +, *, @kwdef, reinterpret, show
 import Makie
 
-global const SOAP_UNIX_SOCK = "/tmp/soap_out.sock"
-global const SOAP_HOST = Sockets.@ip_str("127.0.0.1")
-global const SOAP_MON_PORT = UInt16(9999)
-global const SOAP_CORE_PORT = UInt16(9993)
-global const SOAP_MAX_BUFF_LEN = 2048
-global const IDType = UInt16
+const SOAP_UNIX_SOCK = "/tmp/soap_out.sock"
+const SOAP_HOST = Sockets.@ip_str("127.0.0.1")
+const SOAP_MON_PORT = UInt16(9999)
+const SOAP_CORE_PORT = UInt16(9993)
+const SOAP_MAX_BUFF_LEN = 2048
+const IDType = UInt16
 const IDDict = Dict{IDType,T} where {T}
-global const eop = SatelliteToolboxTransformations.fetch_iers_eop()
+const asset_path = RelocatableFolders.@path joinpath(@__DIR__, "../assets")
+const eop = SatelliteToolboxTransformations.fetch_iers_eop()
 
 include("types.jl")
 export show
@@ -30,6 +32,7 @@ include("simulate.jl")
 include("monitor.jl")
 include("network.jl")
 include("io.jl")
+
 
 export worm,
     cross,
@@ -76,11 +79,16 @@ export worm,
     monitor,
     write_csv,
     load_earth_texture_to_ecef,
-    test_texture,
     load_jsonc,
     load_config,
     check_ids
 
 export reinterpret
+
+BUILD = false
+if BUILD
+    include("app.jl")
+    export julia_main
+end
 
 end # module OpenSOAP

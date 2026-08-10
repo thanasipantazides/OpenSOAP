@@ -28,13 +28,9 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
         "do_J2" => true,
     )
 
-    # [println(c) for c in values(target_configs)]
     println(collect(values(target_configs)))
 
     println((modes, targets, target_configs, constraints))
-
-    # sun_state = filter(x -> isa(x, SunState), targets)[1]
-    sun_state = findfirst(x -> isa(x, SunState), targets)
 
     # udp 
     # sock =
@@ -48,7 +44,7 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
     # sock = setup_server(SOAP_UNIX_SOCK)
 
     play = Ref(UInt8(0x01))
-    do_quit = Ref(QuitMessage(0x00))
+    do_quit = Ref(UInt8(0x00))
     playrate = Ref(UInt8(0x01))
     perturbation = Ref(PerturbationMessage(Vec3d(0.0), 0.0, Vec3d(0.0), 0.0))
     # perturb_moment = Ref(Vec3d(0.0))
@@ -60,7 +56,11 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
     # handle received commands
     # todo: factor this out of the run() function.
 
-    @async while do_quit[].message != 0x01
+
+    @async while do_quit[] != 0x01
+        if !isreadable(sock.sock)
+            do_quit[] = 0x01
+        end
 
         ret = read_transport(sock)
         type = ret[1]
@@ -86,18 +86,13 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
             println("> perturbing: ", cmd)
         end
         if type === QuitMessage
-            do_quit[] = 0x01
-            close(sock.sock)
+            do_quit[] = cmd.message
         end
     end
 
     time = sim.start_time
 
-    while do_quit[].message != 0x01 #isopen(sock)
-        # if do_quit[].message == 0x01
-        #     close(sock)
-        #     return 1
-        # end
+    while do_quit[] != 0x01 #isopen(sock)
         try
             if play[] == 0x01
                 # update all dynamic systems
@@ -158,6 +153,8 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
         end
         # print(" "*worm(counter%pwidth, pwidth)*" \r")
     end
+
+    # close(sock.sock)
 end
 
 # same as run(), but no socket communication. For testing.

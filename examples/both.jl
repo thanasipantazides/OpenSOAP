@@ -13,18 +13,11 @@ function main()
     fcore = @spawnat workers()[1] OpenSOAP.run(config_path = fconfig)
     sleep(3)
     println("launching monitor...")
-    fmon = @spawnat workers()[2] OpenSOAP.monitor()
-    # OpenSOAP.monitor(config_path = fconfig)
+    fmon = @spawnat workers()[2] OpenSOAP.monitor(config_path = fconfig)
 
     fm = fetch(fmon)
-    # fc = fetch(fcore)
 
-    interrupt(fmon.where)
-    sleep(2)
-    interrupt(fcore.where)
+    sleep(1)
 
-    # # sleep(1)
-    if isfile(OpenSOAP.unixsockname)
-        rm(OpenSOAP.unixsockname)
-    end
+    return 0
 end
