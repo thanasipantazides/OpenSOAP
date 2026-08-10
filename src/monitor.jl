@@ -10,64 +10,16 @@ end
 
 function load_earth_texture_to_ecef(path::String)
     texture = FileIO.load(path)
-    texture = texture'
-    W_uv = length(texture[:, 1])
-    texture = circshift(texture, (round(W_uv)/2, 0))
+    W_uv = length(texture[1, :])
+    texture = circshift(texture, (0, round(W_uv)/2))
     return texture
 end
 
-function get_sphere_mesh(texture)
-    nθ = length(texture[:, 1])
-    nφ = length(texture[1, :])
-    θ = range(0, stop = 2π, length = nθ)
-    φ = range(0, stop = π, length = nφ)
-    mesh_X = zeros(nθ, nφ)
-    mesh_Y = zeros(nθ, nφ)
-    mesh_Z = zeros(nθ, nφ)
-    for i = 1:nθ
-        for j = 1:nφ
-            # a point in the mesh
-            p =
-                SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS*[
-                    cos(θ[i])*sin(φ[j]);
-                    sin(θ[i])*sin(φ[j]);
-                    cos(φ[j])
-                ]
-            mesh_X[i, j] = p[1]
-            mesh_Y[i, j] = p[2]
-            mesh_Z[i, j] = p[3]
-        end
-    end
-    return mesh_X, mesh_Y, mesh_Z
-end
-
-function test_texture()
-    texture = load_earth_texture_to_ecef("assets/map_diffuse.png")
-    GLMakie.activate!()
-    nθ = length(texture[:, 1])
-    nφ = length(texture[1, :])
-    θ = range(0, stop = 2π, length = nθ)
-    φ = range(0, stop = π, length = nφ)
-    mesh_X = zeros(nθ, nφ)
-    mesh_Y = zeros(nθ, nφ)
-    mesh_Z = zeros(nθ, nφ)
-    for i = 1:nθ
-        for j = 1:nφ
-            # a point in the mesh
-            p =
-                SatelliteToolboxBase.EARTH_EQUATORIAL_RADIUS*[
-                    cos(θ[i])*sin(φ[j]);
-                    sin(θ[i])*sin(φ[j]);
-                    cos(φ[j])
-                ]
-            mesh_X[i, j] = p[1]
-            mesh_Y[i, j] = p[2]
-            mesh_Z[i, j] = p[3]
-        end
-    end
-    f, ax, pl = GLMakie.mesh(mesh_X, mesh_Y, mesh_Z, color = texture, invert_normals = true)
-    display(f)
-    return f
+function get_sphere_mesh()
+    n = 40
+    sphere = Tesselation(Sphere(Point3f(0, 0, 0), 6371e3), n)
+    m = uv_normal_mesh(sphere)
+    return m
 end
 
 function get_body_mesh(scale::Float64 = 0.25)
@@ -112,8 +64,7 @@ end
 
 function monitor(; config_path::AbstractString = joinpath("config", "example.jsonc"))
 
-    textureprefix = joinpath("assets")
-    textures = [
+    textures_names = [
         "map_diffuse.png",
         "map_marble.png",
         "map_bathy.png",
@@ -121,10 +72,11 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         "map_veggie.jpeg",
         "map_diffuse_gm.png",
     ] #"map_pol1.png", "map_pol2.png", "map_tissot.jpg", "map_cities.png", ] #"map_bw.png"
+    textures = joinpath.(asset_path, textures_names)
     texturek = 1
     texture =
-        Observable(load_earth_texture_to_ecef(joinpath(textureprefix, textures[texturek])))
-    X_ECI, Y_ECI, Z_ECI = get_sphere_mesh(texture[])
+        Observable(load_earth_texture_to_ecef(joinpath(asset_path, textures[texturek])))
+    earth_mesh_v = get_sphere_mesh()
 
     body_mesh_val = get_body_mesh()
 
@@ -184,7 +136,10 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     cmd_label = Observable("")
 
     GLMakie.activate!(title = "Hello, Greetings, and Welcome.")
-    GLMakie.set_theme!(font = "OCR-B")
+    # GLMakie.set_theme!(font = "OCR-B")
+    # GLMakie.set_theme!(Makie.theme_minimal())
+    GLMakie.update_theme!(font = "OCR-B")
+
     al = AmbientLight(RGBf(0.4, 0.4, 0.4))
     dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), pos_sun_ECI[])
     fig = GLMakie.Figure(size = (730, 580))
@@ -253,15 +208,13 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     lines!(ax, target_dir_ECI, color = tailcolor, linewidth = 1)
     lines!(ax, moment_ECI, color = :black, linewidth = 2)
     lines!(ax, angular_velocity_ECI, color = :grey, linewidth = 1)
-    earth_mesh = GLMakie.surface!(
+    earth_mesh = GLMakie.mesh!(
         ax,
-        X_ECI,
-        Y_ECI,
-        Z_ECI,
+        earth_mesh_v,
         color = texture,
         diffuse = Vec3f(0.6),
         specular = Vec3f(0.1),
-        invert_normals = true,
+        # invert_normals = true,
     )
     body_frame = GLMakie.lines!(
         ax,
@@ -500,7 +453,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             if event.key == Keyboard.e
                 texturek = mod(texturek, length(textures)) + 1
                 texture[] =
-                    load_earth_texture_to_ecef(joinpath(textureprefix, textures[texturek]))
+                    load_earth_texture_to_ecef(joinpath(asset_path, textures[texturek]))
                 notify(texture)
                 # return Consume(true)
             end
@@ -553,14 +506,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         end
     end
 
-    while true
+    while !do_quit[]
         try
-            if do_quit[]
-                println("exiting...")
-                close(sock.sock)
-                GLMakie.closeall()
-                return 1
-            end
 
             ret = read_transport(sock; buff = rx_buff)
             type = ret[1]
@@ -750,8 +697,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         catch e
             if typeof(e) <: InterruptException
                 println("exiting...")
-                close(sock.sock)
                 GLMakie.closeall()
+                close(sock.sock)
                 return -1
             else
                 rethrow(e)
@@ -760,6 +707,12 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             end
         end
     end
+
+    close(sock.sock)
+    cmd_label[] = "goodbye"
+    notify(cmd_label)
+    GLMakie.closeall()
+    return 1
 end
 
 function stringify(something::AbstractArray)::String
