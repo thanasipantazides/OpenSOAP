@@ -52,6 +52,7 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
     packlen = 1
     headbuff = zeros(UInt8, 8)
     buff = zeros(UInt8, packlen)
+    send_targets_per_sat_update = Int(10)
 
     # handle received commands
     # todo: factor this out of the run() function.
@@ -116,9 +117,12 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
                 sat_data = packetize(sat, 0x0000, sim.step_count)
                 write_transport(sock, sat_data)
 
-                for target in values(targets)
-                    t_data = packetize(target, 0x0000, sim.step_count)
-                    write_transport(sock, t_data)
+                # don't need to update Earth/Sun/etc positions as often as spacecraft state---save bandwidth.
+                if sim.step_count % send_targets_per_sat_update == 0
+                    for target in values(targets)
+                        t_data = packetize(target, 0x0000, sim.step_count)
+                        write_transport(sock, t_data)
+                    end
                 end
 
                 # control playback rate
