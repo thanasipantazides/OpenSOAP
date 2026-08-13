@@ -132,6 +132,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     body_frame_visible = Observable(false)
     axes_label_visible = Observable(false)
+    gs_cones_visible = Observable(false)
 
     cmd_label = Observable("")
 
@@ -261,7 +262,47 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     ecef_labels =
         [rich("X", subscript("F")), rich("Y", subscript("F")), rich("Z", subscript("F"))]
 
-    gs_scatter = GLMakie.meshscatter!(ax, gs_pts, color = gs_col, markersize = 0.03*6371e3)
+    gs_scatter = GLMakie.meshscatter!(
+        ax,
+        gs_pts,
+        color = gs_col,
+        markersize = 0.02*6371e3,
+        alpha = 1.0,
+    )
+
+    gs_cone_len = 1.1*norm(sat.position_ECI) - 6371e3
+    gs_cone_scaling = gs_cone_len / 6371e3
+    gs_src_pts = [
+        (1 + gs_cone_scaling)*target_states[k].position_ECI for
+        k in keys(target_states) if target_states[k] isa GroundState
+    ]
+    # gs_src_pts = Observable([
+    #     (1 + gs_cone_scaling)*target_states[k].position_ECI for
+    #     k in keys(target_states) if target_states[k] isa GroundState
+    # ])
+    cone = Tesselation(
+        Cone(Point3d(0.0), gs_cone_len*Point3d(0.0, 0.0, 1.0), gs_cone_len*2),
+        40,
+    )
+
+    # note: this meshscatter approach intrinsically assumes all groundstations have 
+    # the same elevation mask. Unless we get creative with nonuniform scale!().
+    gs_src_rots = [
+        dcm_to_quat(
+            r_min_arc(Point3d(0.0, 0.0, -1.0), normalize(target_states[k].position_ECI))',
+        ) for k in keys(target_states) if target_states[k] isa GroundState
+    ]
+
+    gs_cones = GLMakie.meshscatter!(
+        ax,
+        gs_src_pts,
+        marker = cone,
+        markersize = 1,
+        alpha = 0.2,
+        color = :blue,
+        rotation = gs_src_rots,
+        visible = gs_cones_visible,
+    )
 
     gs_names = GLMakie.text!(
         ax,
@@ -544,6 +585,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 GLMakie.rotate!(earth_mesh, q_ECEF_ECI[])
                 GLMakie.rotate!(fixed_frame, q_ECEF_ECI[])
                 GLMakie.rotate!(ecef_names, q_ECEF_ECI[])
+                gs_cones_visible[] && GLMakie.rotate!(gs_cones, q_ECEF_ECI[])
 
             elseif typeof(simdata) === SunState
                 GLMakie.set_directional_light!(
@@ -556,7 +598,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             elseif typeof(simdata) === GroundState
                 gs_dict[simdata.id] = simdata
                 target_states[simdata.id] = simdata
-                # met[] = simdata.elapsed_time
 
             elseif typeof(simdata) === SatelliteState
                 # update mission clock
@@ -646,8 +687,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 notify(moment_ECI)
 
                 target_name =
-                    (simdata.target == typemax(IDType)) ? "" :
-                    typeof(target_states[simdata.target])
+                    (simdata.target == typemax(IDType)) ? "nothing" :
+                    find_config(target_states[simdata.target], target_configs).name
 
                 debuginfo[] = rich(
                     "mode:   ",
@@ -806,10 +847,8 @@ function write_csv(
     outfile::AbstractString;
     infile::AbstractString = joinpath("config", "example.jsonc"),
 )
-    # server = Sockets.listen(unixsockname)
-    sock = Sockets.UDPSocket()
-    # bind(sock, unixsockname)
-    sock = Sockets.connect(unixsockname)
+
+    sock = setup_client(SOAP_HOST, SOAP_CORE_PORT)
 
     outf = open(outfile, "a")
 
@@ -844,16 +883,23 @@ function write_csv(
 
     this_line = CSVLine()
 
+    rx_buff = zeros(UInt8, SOAP_MAX_BUFF_LEN)
     met = 0.0
-    while !eof(sock)
+    while !eof(sock.sock)
         try
 
-            nbhead = readbytes!(sock, headbuff)
-            type, flags, len = behead(headbuff)
-
-            buff = zeros(UInt8, len)
-            nbdata = readbytes!(sock, buff)
-            this_count, simdata = des(type, buff)
+            ret = read_transport(sock; buff = rx_buff)
+            type = ret[1]
+            count = 0
+            flags = 0
+            len = 0
+            simdata = UInt8[]
+            if type<:AbstractState
+                len = ret[2]
+                flags = ret[3]
+                count = ret[4]
+                simdata = ret[5]
+            end
 
             if typeof(simdata) === EarthState
                 # q_ECEF_ECI[] = dcm_to_quat(simdata.attitude_ECI_ECEF)
