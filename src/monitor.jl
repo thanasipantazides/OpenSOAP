@@ -62,20 +62,17 @@ function handle_new_config(path::AbstractString)
     return res
 end
 
+function get_maps()
+    maps_files = readdir(joinpath(asset_path, "maps"))
+    maps = [joinpath(asset_path, "maps", m) for m in maps_files if !isdir(m)]
+    return maps
+end
+
 function monitor(; config_path::AbstractString = joinpath("config", "example.jsonc"))
 
-    textures_names = [
-        "map_diffuse.png",
-        "map_marble.png",
-        "map_bathy.png",
-        "map_snow.jpeg",
-        "map_veggie.jpeg",
-        "map_diffuse_gm.png",
-    ] #"map_pol1.png", "map_pol2.png", "map_tissot.jpg", "map_cities.png", ] #"map_bw.png"
-    textures = joinpath.(asset_path, textures_names)
+    textures = get_maps()
     texturek = 1
-    texture =
-        Observable(load_earth_texture_to_ecef(joinpath(asset_path, textures[texturek])))
+    texture = Observable(load_earth_texture_to_ecef(textures[texturek]))
     earth_mesh_v = get_sphere_mesh()
 
     body_mesh_val = get_body_mesh()
@@ -493,8 +490,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             end
             if event.key == Keyboard.e
                 texturek = mod(texturek, length(textures)) + 1
-                texture[] =
-                    load_earth_texture_to_ecef(joinpath(asset_path, textures[texturek]))
+                texture[] = load_earth_texture_to_ecef(textures[texturek])
                 notify(texture)
                 # return Consume(true)
             end

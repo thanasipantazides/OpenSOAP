@@ -15,7 +15,7 @@ function main()
     println("launching monitor...")
     fmon = @spawnat workers()[2] OpenSOAP.monitor(config_path = fconfig)
 
-    fm = fetch(fmon)
+    fm = fetch(fcore)
 
     sleep(1)
 
