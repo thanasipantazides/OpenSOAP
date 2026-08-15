@@ -16,7 +16,7 @@ function load_earth_texture_to_ecef(path::String)
 end
 
 function get_sphere_mesh()
-    n = 40
+    n = 100
     sphere = Tesselation(Sphere(Point3f(0, 0, 0), 6371e3), n)
     m = uv_normal_mesh(sphere)
     return m
@@ -71,10 +71,11 @@ end
 function monitor(; config_path::AbstractString = joinpath("config", "example.jsonc"))
 
     textures = get_maps()
-    texturek = 1
+    fdi = findfirst(f -> occursin("map_diffuse", f), textures)
+    texturek = isnothing(fdi) ? 1 : fdi
     texture = Observable(load_earth_texture_to_ecef(textures[texturek]))
-    earth_mesh_v = get_sphere_mesh()
 
+    earth_mesh_v = get_sphere_mesh()
     body_mesh_val = get_body_mesh()
 
     sim, sat, sat_config, target_states, target_configs, constraints, modes =
@@ -86,7 +87,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         - v:\tverbose
         - q:\tquit
         - e:\tchange earth texture
-        - f:\tshow/hide Body frame
+        - f:\tshow/hide reference frames
         - l:\tshow/hide labels
         - p:\tchange camera projection
         - c:\tchange camera focus
@@ -134,9 +135,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     cmd_label = Observable("")
 
     GLMakie.activate!(title = "Hello, Greetings, and Welcome.")
-    # GLMakie.set_theme!(font = "OCR-B")
-    # GLMakie.set_theme!(Makie.theme_minimal())
-    GLMakie.update_theme!(font = "OCR-B")
+    GLMakie.set_theme!(Makie.Theme(fonts = (; regular = "Menlo")))
 
     al = AmbientLight(RGBf(0.4, 0.4, 0.4))
     dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), pos_sun_ECI[])
@@ -152,26 +151,13 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     cam = cameracontrols(ax.scene)
 
-    ax_batt =
-        Axis(fig[1, 4], ylabel = "battery [%]", ylabelfont = "OCR-B", tellwidth = false)
+    ax_batt = Axis(fig[1, 4], ylabel = "battery [%]", tellwidth = false)
     ylims!(ax_batt, 0.0, 102)
-    ax_power =
-        Axis(fig[2, 4], ylabel = "power [W]", ylabelfont = "OCR-B", tellwidth = false)
-    ax_stor = Axis(
-        fig[3, 4],
-        ylabel = "onboard\ndata [%]",
-        ylabelfont = "OCR-B",
-        tellwidth = false,
-    )
+    ax_power = Axis(fig[2, 4], ylabel = "power [W]", tellwidth = false)
+    ax_stor = Axis(fig[3, 4], ylabel = "onboard\ndata [%]", tellwidth = false)
     ylims!(ax_stor, 0.0, 102)
-    ax_data = Axis(
-        fig[4, 4],
-        ylabel = "datarate\n[Mbps]",
-        ylabelfont = "OCR-B",
-        tellwidth = false,
-    )
-    ax_dbug =
-        Axis(fig[5, 4], ylabel = "SO(3) res.", ylabelfont = "OCR-B", tellwidth = false)
+    ax_data = Axis(fig[4, 4], ylabel = "datarate\n[Mbps]", tellwidth = false)
+    ax_dbug = Axis(fig[5, 4], ylabel = "SO(3) res.", tellwidth = false)
     # hidedecorations!(ob)
     hidespines!(ax_batt)
     hidespines!(ax_power)
@@ -305,7 +291,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         ax,
         gs_label_pts,
         text = gs_labels,
-        font = "OCR-B",
         fontsize = 10.0,
         align = (:center, :center),
         visible = axes_label_visible,
@@ -314,7 +299,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         ax,
         6371e3*eci_scale*1.1*basis(),
         text = eci_labels,
-        font = "OCR-B",
         fontsize = 10.0,
         align = (:center, :center),
         visible = axes_label_visible,
@@ -323,21 +307,12 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         ax,
         6371e3*ecef_scale*1.1*basis(),
         text = ecef_labels,
-        font = "OCR-B",
         fontsize = 10.0,
         align = (:center, :center),
         visible = axes_label_visible,
     )
 
-    clock = text!(
-        ax,
-        0,
-        1,
-        text = met_label,
-        align = (:left, :top),
-        space = :relative,
-        font = "OCR-B",
-    )
+    clock = text!(ax, 0, 1, text = met_label, align = (:left, :top), space = :relative)
     cmd = text!(
         ax,
         0,
@@ -345,7 +320,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         text = cmd_label,
         align = (:left, :bottom),
         space = :relative,
-        font = "OCR-B",
         fontsize = 10.0,
     )
     dbg = text!(
@@ -355,7 +329,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         text = debuginfo,
         align = (:right, :bottom),
         space = :relative,
-        font = "OCR-B",
         fontsize = 10.0,
         # glowcolor=tailcolor,
         # glowwidth=1.0,
@@ -687,16 +660,24 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                     find_config(target_states[simdata.target], target_configs).name
 
                 debuginfo[] = rich(
-                    "mode:   ",
+                    "mode: ",
                     rich(
-                        String(Printf.@sprintf "%30s" mode_conf.name),
+                        String(Printf.@sprintf "%20s" mode_conf.name),
                         "\n",
                         color = tailcolor[],
                     ),
                     "target: ",
-                    rich(String(Printf.@sprintf "%30s" string(target_name)), "\n"),
+                    rich(String(Printf.@sprintf "%20s" string(target_name)), "\n"),
                     "config: ",
-                    rich(String(Printf.@sprintf "%30s" configfilename[])),
+                    rich(String(Printf.@sprintf "%20s" configfilename[]), "\n"),
+                    "time gain: ",
+                    rich(
+                        String(
+                            Printf.@sprintf "%18u:1" Int64(
+                                round((met[] - last_met)/(time() - lastratetime)),
+                            )
+                        ),
+                    ),
                 )
 
                 # debuginfo[] = rich("target: ", "nothin")
