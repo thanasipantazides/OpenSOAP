@@ -5,7 +5,7 @@ import Dates
 function core_rate()
     testjsonpath = joinpath("config", "example.jsonc")
     if !isfile(testjsonpath)
-        @error("bad config file path")
+        error("bad config file path")
     end
 
     sim, sat, sat_config, target_states, target_configs, constraints, modes =
@@ -38,3 +38,6 @@ function core_rate()
         sim.step_count += 1
     end
 end
+
+# e0eaa5b: 10^5 steps in 10.5 s
+#    HEAD: 10^5 steps in 11.1 s (includes calls to atmospheric model NRLMSISE00 each step)

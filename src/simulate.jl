@@ -1,7 +1,7 @@
 using LinearAlgebra
 import Dates
 import SatelliteToolboxTransformations,
-    SatelliteToolboxBase, SatelliteToolboxCelestialBodies
+    SatelliteToolboxBase, SatelliteToolboxCelestialBodies, SatelliteToolboxAtmosphericModels
 
 function dynamics_orbit(x::PositionState, dt::Float64)::PositionState
     dv = -SatelliteToolboxBase.GM_EARTH / (norm(x.position_ECI)^3) .* x.position_ECI
@@ -248,6 +248,29 @@ function step!(
     set_visibility!(mag, mag_config, sat, sat_config, t, modes)
 end
 
+function density_perturbations(
+    sat::SatelliteState,
+    sat_config::SatelliteConfig,
+    t::Dates.DateTime,
+)
+    C_d = 1.2
+
+    C_ECEF_ECI = SatelliteToolboxTransformations.r_eci_to_ecef(
+        SatelliteToolboxTransformations.J2000(),
+        SatelliteToolboxTransformations.ITRF(),
+        SatelliteToolboxBase.date_to_jd(t),
+        eop,
+    )
+    pos_LLA = SatelliteToolboxTransformations.ecef_to_geodetic(C_ECEF_ECI*sat.position_ECI)
+    atmosdata =
+        SatelliteToolboxAtmosphericModels.AtmosphericModels.nrlmsise00(t, pos_LLA...)
+    drag_Body =
+        -0.5*atmosdata.total_density*C_d*0.1*0.2*sat.velocity_ECI'*sat.velocity_ECI*normalize(
+            sat.velocity_ECI,
+        )
+    return (Vec3d(drag_Body), Vec3d(0.0))
+end
+
 function clamp_attitude_align!(
     sat::SatelliteState,
     sat_config::SatelliteConfig,
@@ -290,7 +313,7 @@ function clamp_attitude_align!(
     elseif target isa MagneticFieldState
         to_ECI = normalize(target.direction_ECI)
     else
-        throw(TypeError("unknown target type $typeof(target)"))
+        error("unknown target type $typeof(target)")
     end
 
     if isnan(norm(from_Body)) || isnan(norm(to_ECI)) # cases where either vector is NaN or zero
@@ -325,6 +348,9 @@ function inner_attitude_dynamic!(
 )
 
     m_pert_Body = Vec3d(0.0) # todo: add real perturbation models
+
+    env = density_perturbations(sat, sat_config, t)
+    m_pert_Body = env[1]*1e-12 # todo: REMOVE! Just to call somewhere.
     if !isnothing(exog)
         m_pert_Body = exog.moment_Body
     end
