@@ -99,6 +99,7 @@ end
     dynamic_id::IDType
     inertia_Body::Mat3d
     inertia_inv_Body::Mat3d
+    surface_area::Float64       # total surface area
     angular_rate_max::Float64
     power_battery_max::Float64
     data_storage_max::Float64
@@ -154,6 +155,7 @@ mutable struct SatelliteState<:AbstractState
     elapsed_time::Float64
 
     # dynamic properties
+    mass::Float64
     net_force_ECI::Vec3d
     net_moment_Body::Vec3d
     position_ECI::Vec3d
@@ -186,6 +188,7 @@ end
 # empty constructor
 SatelliteState() = SatelliteState(
     0x0000,
+    0.0,
     0.0,
     Vec3d(0),
     Vec3d(0),

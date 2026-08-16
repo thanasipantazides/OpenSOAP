@@ -434,21 +434,6 @@ function get_json_mat3d(major_key::AbstractString, val::AbstractVector)
     return Mat3d(value)
 end
 
-function make_mode_table(
-    modes::Vector{ModeConfig},
-    target_configs::Vector{<:AbstractConfig},
-)::Matrix{UInt8}
-    M = zeros(UInt8, length(target_configs), length(modes))
-    for (m, mode) in enumerate(modes)
-        for (t, target) in enumerate(target_configs)
-            if target.id in mode.target_ids
-                M[t, m] = 1
-            end
-        end
-    end
-    return M
-end
-
 function load_config(d::Dict{String,Any})
     id_registry = Set{IDType}(23)
 
@@ -476,6 +461,7 @@ function load_config(d::Dict{String,Any})
     sat = SatelliteState(
         next_id!(id_registry),      # ID
         0.0,                        # met
+        d["spacecraft"]["mechanical"]["mass"],
         Vec3d(0.0),     # net force
         Vec3d(0.0),     # net moment
         Vec3d(d["simulation"]["initial"]["position"]),
@@ -517,6 +503,7 @@ function load_config(d::Dict{String,Any})
         sat.id,
         inertia,
         inv(inertia),
+        d["spacecraft"]["mechanical"]["total_surface_area"],
         d["spacecraft"]["control"]["max_slew_rate"],
         d["spacecraft"]["power"]["capacity"],
         d["spacecraft"]["data"]["capacity"],
@@ -589,12 +576,6 @@ function load_config(d::Dict{String,Any})
     return (sim, sat, sat_config, target_states, target_configs, constraints, modes)
 end
 
-function tabulate(
-    x::Union{Vector{<:AbstractTarget},Vector{<:AbstractState},Vector{<:AbstractConfig}},
-)
-    return Dict(p.id => p for p in x)
-end
-
 function check_ids(
     sat,
     sat_config,
@@ -622,3 +603,12 @@ function check_ids(
     end
     return good
 end
+
+function init_time(
+    sat,
+    sat_config,
+    target_states::IDDict{<:AbstractState},
+    target_configs::IDDict{<:AbstractConfig},
+    constraints::IDDict{<:AbstractConstraint},
+    modes,
+) end

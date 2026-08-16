@@ -8,9 +8,11 @@ function core_rate()
         error("bad config file path")
     end
 
+    println("loading config...")
     sim, sat, sat_config, target_states, target_configs, constraints, modes =
         load_config(Dict(load_jsonc(testjsonpath)))
 
+    println("testing simulation speed...")
     time = sim.start_time
     @time while sim.step_count < 10^5
         OpenSOAP.step_sim!(
@@ -40,4 +42,4 @@ function core_rate()
 end
 
 # e0eaa5b: 10^5 steps in 10.5 s
-#    HEAD: 10^5 steps in 11.1 s (includes calls to atmospheric model NRLMSISE00 each step)
+# 874c264: 10^5 steps in 11.1 s (includes calls to atmospheric model NRLMSISE00 each step)

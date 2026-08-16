@@ -9,7 +9,10 @@ import Dates
 import DateFormats
 import PrettyTables
 import SatelliteToolboxTransformations,
-    SatelliteToolboxBase, SatelliteToolboxCelestialBodies, SatelliteToolboxGeomagneticField
+    SatelliteToolboxBase,
+    SatelliteToolboxCelestialBodies,
+    SatelliteToolboxGeomagneticField,
+    SatelliteToolboxAtmosphericModels
 import Base: +, *, @kwdef, reinterpret, show
 import Makie
 
@@ -22,6 +25,8 @@ const IDType = UInt16
 const IDDict = Dict{IDType,T} where {T}
 const asset_path = RelocatableFolders.@path joinpath(@__DIR__, "../assets")
 const eop = SatelliteToolboxTransformations.fetch_iers_eop()
+
+SatelliteToolboxAtmosphericModels.SpaceIndices.init()
 
 include("types.jl")
 export show

@@ -254,6 +254,10 @@ function density_perturbations(
     t::Dates.DateTime,
 )
     C_d = 1.2
+    # mean projected area of a convex shape over all attitudes 
+    # is the total surface area divided by 4:
+    mean_projected_area = sat_config.surface_area / 4
+    # I use this in lieu of ray tracing to find the projected area along the velocity vector for drag calculations.
 
     C_ECEF_ECI = SatelliteToolboxTransformations.r_eci_to_ecef(
         SatelliteToolboxTransformations.J2000(),
@@ -264,11 +268,11 @@ function density_perturbations(
     pos_LLA = SatelliteToolboxTransformations.ecef_to_geodetic(C_ECEF_ECI*sat.position_ECI)
     atmosdata =
         SatelliteToolboxAtmosphericModels.AtmosphericModels.nrlmsise00(t, pos_LLA...)
-    drag_Body =
-        -0.5*atmosdata.total_density*C_d*0.1*0.2*sat.velocity_ECI'*sat.velocity_ECI*normalize(
-            sat.velocity_ECI,
-        )
-    return (Vec3d(drag_Body), Vec3d(0.0))
+    drag_force_Body =
+        -0.5*atmosdata.total_density*C_d*mean_projected_area*(
+            sat.velocity_ECI'*sat.velocity_ECI
+        )*normalize(sat.velocity_ECI)
+    return (Vec3d(drag_force_Body), Vec3d(0.0))
 end
 
 function clamp_attitude_align!(

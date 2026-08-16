@@ -68,21 +68,22 @@ function ser(counter::UInt64, state::SatelliteState)::Vector{UInt8}
 
     f0 = reinterpret(UInt8, [state.id])
     f1 = reinterpret(UInt8, [state.elapsed_time])
-    f2 = reinterpret(UInt8, [state.net_force_ECI])
-    f3 = reinterpret(UInt8, [state.net_moment_Body])
-    f4 = reinterpret(UInt8, [state.position_ECI])
-    f5 = reinterpret(UInt8, [state.velocity_ECI])
-    f6 = reinterpret(UInt8, [state.angular_velocity_ECI_Body])
-    f7 = reinterpret(UInt8, [state.attitude_ECI_Body])
+    f2 = reinterpret(UInt8, [state.mass])
+    f3 = reinterpret(UInt8, [state.net_force_ECI])
+    f4 = reinterpret(UInt8, [state.net_moment_Body])
+    f5 = reinterpret(UInt8, [state.position_ECI])
+    f6 = reinterpret(UInt8, [state.velocity_ECI])
+    f7 = reinterpret(UInt8, [state.angular_velocity_ECI_Body])
+    f8 = reinterpret(UInt8, [state.attitude_ECI_Body])
 
-    f8 = reinterpret(UInt8, [state.net_power])
-    f9 = reinterpret(UInt8, [state.net_data])
-    f10 = reinterpret(UInt8, [state.battery_level])
-    f11 = reinterpret(UInt8, [state.storage_level])
-    f12 = reinterpret(UInt8, [state.mode])
-    f13 = reinterpret(UInt8, [state.target])
-    f14 = reinterpret(UInt8, [state.target_visible])
-    f15 = reinterpret(UInt8, [state.target_pointed])
+    f9 = reinterpret(UInt8, [state.net_power])
+    f10 = reinterpret(UInt8, [state.net_data])
+    f11 = reinterpret(UInt8, [state.battery_level])
+    f12 = reinterpret(UInt8, [state.storage_level])
+    f13 = reinterpret(UInt8, [state.mode])
+    f14 = reinterpret(UInt8, [state.target])
+    f15 = reinterpret(UInt8, [state.target_visible])
+    f16 = reinterpret(UInt8, [state.target_pointed])
 
     res = vcat(
         c,
@@ -102,6 +103,7 @@ function ser(counter::UInt64, state::SatelliteState)::Vector{UInt8}
         f13,
         f14,
         f15,
+        f16,
         UInt8[0x0a],
     )
     return res

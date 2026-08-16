@@ -75,7 +75,9 @@
           0.13
         ]
       ],
-      "inertia_major": "row" // how to read in "inertia"
+      "inertia_major": "row", // how to read in "inertia"
+      "total_surface_area": 0.22 // total surface area of spacecraft body.
+      // this, along with an assumption that projected area averaged over all attitudes is equal to total_surface_area/4, is used to perform drag and pressure calculations without ray tracing..
     },
     "control": {
       "mode": "pd",
