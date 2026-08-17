@@ -702,10 +702,10 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             bytecount += len + 8
 
             if time() - lastratetime > secondly_debug
-                Printf.@printf "rate: %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
-                Printf.@printf "time gain: %u:1 \n" Int64(
-                    round((met[] - last_met)/(time() - lastratetime)),
-                )
+                # Printf.@printf "rate: %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
+                # Printf.@printf "time gain: %u:1 \n" Int64(
+                #     round((met[] - last_met)/(time() - lastratetime)),
+                # )
                 last_met = met[]
                 lastratetime = time()
                 bytecount = 0

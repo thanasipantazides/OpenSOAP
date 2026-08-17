@@ -63,3 +63,6 @@ Serialization = "1.11.0"
 Sockets = "1.11.0"
 StaticArrays = "1.9.18"
 Test = "1.11.0"
+
+[workspace]
+projects = ["docs"]

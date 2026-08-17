@@ -272,19 +272,22 @@ function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
         return (state, config)
 
     elseif target_type === GroundState
+        pos_lla = Vec3d(
+            pi/180*(json["direction"]["value"][1:2])...,
+            json["direction"]["value"][3],
+        )
+
         state = GroundState(
             next_id!(id_registry),
             0.0,
             2,
-            pi/180*Point3d(json["direction"]["value"]...),
+            pos_lla,
             SatelliteToolboxTransformations.r_ecef_to_eci(
                 SatelliteToolboxTransformations.ITRF(),
                 SatelliteToolboxTransformations.J2000(),
                 SatelliteToolboxBase.date_to_jd(start_time),
                 eop,
-            )*SatelliteToolboxTransformations.geodetic_to_ecef(
-                pi/180*Point3d(json["direction"]["value"]...),
-            ),
+            )*SatelliteToolboxTransformations.geodetic_to_ecef(pos_lla),
             false,
             false,
         )

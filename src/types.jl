@@ -226,7 +226,7 @@ mutable struct GroundState<:AbstractTarget
     elapsed_time::Float64
 
     priority::UInt16 # todo: make this a Mode priority, not Target priority.
-    const position_LLA::Point3d
+    position_LLA::Point3d
     position_ECI::Point3d
     visible::Bool
     selected::Bool
@@ -326,7 +326,7 @@ function Base.show(io::IO, confs::Vector{<:AbstractConfig})
         io,
         els;
         title = "Target configurations",
-        column_labels = ["Conf. ID", "Name", "Dyn. ID"],
+        column_labels = ["Name", "Conf. ID", "Dyn. ID"],
         backend = :text,
         table_format = fmt,
     )
@@ -337,10 +337,10 @@ function Base.show(io::IO, confs::IDDict{<:AbstractConfig})
         PrettyTables.TextTableFormat(borders = PrettyTables.text_table_borders__borderless)
 
     els = fill("", (length(confs), 3))
-    for (k, c) in enumerate(collect(values(confs)))
-        els[k, 1]="$(c.name)"
-        els[k, 2]="$(string(c.id, base=16, pad=4))"
-        els[k, 3]="-> $(string(c.dynamic_id, base=16, pad=4))"
+    for (k, c) in enumerate(collect(keys(confs)))
+        els[k, 1]="$(confs[c].name)"
+        els[k, 2]="$(string(confs[c].id, base=16, pad=4))"
+        els[k, 3]="-> $(string(confs[c].dynamic_id, base=16, pad=4))"
     end
     PrettyTables.pretty_table(
         io,

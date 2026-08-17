@@ -1,9 +1,24 @@
 # global const unixsock"tname = "127.0.0.1"
 
-function run(; config_path::AbstractString = joinpath("config", "example.jsonc"))
 
+function run(; config_path::AbstractString = joinpath("config", "example.jsonc"))
     sim, sat, sat_config, targets, target_configs, constraints, modes =
         load_config(Dict(load_jsonc(config_path)))
+    return run(sim, sat, sat_config, targets, target_configs, constraints, modes)
+end
+
+function run(
+    sim::SimConfig,
+    sat::SatelliteState,
+    sat_config::SatelliteConfig,
+    targets::IDDict{<:AbstractState},
+    target_configs::IDDict{<:AbstractConfig},
+    constraints::IDDict{<:AbstractConstraint},
+    modes::Vector{ModeConfig},
+)# config_path::AbstractString = joinpath("config", "example.jsonc"))
+
+    # sim, sat, sat_config, targets, target_configs, constraints, modes =
+    #     load_config(Dict(load_jsonc(config_path)))
 
     # return targets, target_configs
 
