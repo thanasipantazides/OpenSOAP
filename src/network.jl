@@ -16,6 +16,7 @@ global const MESSAGE_TYPES = Dict{DataType,UInt16}(
     EarthState => 0x0103,
     SunState => 0x0100,
     GroundState => 0x0400,
+    ModeConfig => 0x0d00,
     PlayMessage => 0x0c01,
     RateMessage => 0x0c02,
     QuitMessage => 0x0c03,
@@ -164,6 +165,22 @@ function ser(counter::UInt64, state::GroundState)::Vector{UInt8}
     return res
 end
 
+function ser(counter::UInt64, config::ModeConfig)::Vector{UInt8}
+    c = reinterpret(UInt8, [counter])
+    f1 = reinterpret(UInt8, [config.id])
+    f2 = reinterpret(UInt8, [config.name])
+    f3 = reinterpret(UInt8, [config.target_ids])
+    f4 = reinterpret(UInt8, [config.constraint_ids])
+    f5 = reinterpret(UInt8, [config.priority])
+    f6 = reinterpret(UInt8, [config.color])
+    f7 = reinterpret(UInt8, [config.power_consumption])
+    f8 = reinterpret(UInt8, [config.data_production])
+    f9 = reinterpret(UInt8, [config.direction_Body])
+
+    res = vcat(c, f1, f2, f3, f4, f5, f6, f7, f8, f9, UInt8[0x0a])
+    return res
+end
+
 function ser(msg::PlayMessage)::Vector{UInt8}
     return [msg.message]
 end
@@ -184,7 +201,10 @@ function ser(msg::PerturbationMessage)::Vector{UInt8}
 end
 
 # general deserializer for AbstractStates
-function des(::Type{T}, raw::Vector{UInt8})::Tuple{UInt64,T} where {T<:AbstractState}
+function des(
+    ::Type{T},
+    raw::Vector{UInt8},
+)::Tuple{UInt64,T} where {T<:Union{<:AbstractState,<:AbstractConfig}}
     countlen = 8
     c = reinterpret(UInt64, raw[1:countlen])
 

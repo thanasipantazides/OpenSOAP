@@ -104,3 +104,26 @@ Items to do:
 - [x] Rewrite (and reconsider) `mode_table`. It currently is a matrix of targets (rows) by modes (cols) indicating mode dependency on targets. This is complicated by the introduction of constraints. It's not part of a clean function signature. If we kept it, we would instead multiple by `[visibilities; constraints_satisfied]` boolean vector.
 - [ ] Remove `params` from signature. There's a `Dict` in `SimConfig` that is meant to hold stuff like this.
 - [ ] Revise `step_satellite` to `step!()`
+
+### REPL interactivity
+
+Plan is to use existing network ser/des stuff to pass `<:AbstractConfig` and `<:AbstractState`s to `core` from REPL context. Something like this:
+
+![REPL interactivity plan](assets/repl-plan.pdf)
+
+Things to do:
+
+- [ ] Make all `<:AbstractConfig` serializable. Maybe switch over to built in serialization if needed.
+  - [ ] In, e.g., `ModeConfig`, `Vector{IDType}` is **not** `isbits()`. Need to use a StaticArray instead, likely. I think this is fine—size of the `ModeConfig.target_ids` list is fixed after initialization.
+- [x] Add a REPL to CORE IP/port and sockets. REPL process is server, CORE is client.
+- [ ] Set up the socket in CORE and add an async listening process on it. Use `Threads.@spawn`.
+  - [ ] Deserialize what comes off the socket and conditionally update some process-wide `IDDict`s if the contents look good.
+- [ ] REPL interface needs:
+  - [ ] Some way to identify the shared objects in a bag. Maybe a way to mark certain ones as stale.
+  - [ ] An async socket interface to CORE, with an `update()` function that writes (either all, or just modified) objects to the interface.
+
+### Notes from serializability via reinterpret:
+
+- `Vector{IDType}` is not serializable (it is not `isbits`).
+- `StaticArrays.SVector{N, UInt16}` is `isbits`. But `N` shouldn't be much bigger than 100.
+- `StaticArrays.SizedVector{N}` not `isbits`.

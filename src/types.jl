@@ -1,3 +1,101 @@
+
+# an isbitstype(IDVector) == true wrapper, to enable good serialization of 
+# lists of IDs (e.g. for ModeConfig.)
+struct IDVector{N} <: AbstractVector{IDType}
+    data::SVector{N,IDType}
+    length::IDType          # not fully generic: IDType is meant for unique 
+    # objects, so only need to store up to typemax(IDType) of them.
+end
+
+Base.size(v::IDVector) = (v.length,)
+Base.getindex(v::IDVector, k) = v.data[k]
+
+function IDVector{N}(v::AbstractVector) where {N}
+    if N > SOAP_MAX_ID_BUCKET
+        error("N is too large")
+    end
+    n = length(v)
+    if n > N
+        error("v is too large!")
+    end
+
+    return IDVector{N}(SVector{N}(vcat(v, zeros(IDType, N - n))), n)
+end
+
+function IDVector(v::AbstractVector)
+    if length(v) > SOAP_MAX_ID_BUCKET
+        error("N is too large")
+    end
+    n = length(v)
+
+    return IDVector{SOAP_MAX_ID_BUCKET}(
+        SVector{SOAP_MAX_ID_BUCKET}(vcat(v, zeros(IDType, SOAP_MAX_ID_BUCKET - n))),
+        n,
+    )
+end
+
+# an isbitstype(SizedString) == true wrapper, to enable serialization of strings
+struct SizedString{N} <: AbstractString
+    length::UInt16
+    data::NTuple{N,UInt8}
+end
+
+function SizedString{N}(s::AbstractString) where {N}
+    if N > typemax(UInt16)
+        throw(ArgumentError("FixedString{N} requires N <= 65535"))
+    end
+    bytes = codeunits(s)
+    n = length(bytes)
+    if n > N
+        throw(ArgumentError("string $s exceeds FixedString capacity $N"))
+    end
+    padded = ntuple(i -> i <= n ? bytes[i] : 0x00, N)
+    SizedString{N}(UInt8(n), padded)
+end
+
+function SizedString(s::AbstractString)
+    if length(codeunits(s)) > SOAP_MAX_STRING_LEN
+        throw(
+            ArgumentError(
+                "FixedString requires a length (in codeunits) < $SOAP_MAX_STRING_LEN",
+            ),
+        )
+    end
+    bytes = codeunits(s)
+    n = length(bytes)
+    padded = ntuple(i -> i <= n ? bytes[i] : 0x00, SOAP_MAX_STRING_LEN)
+    SizedString{SOAP_MAX_STRING_LEN}(UInt8(n), padded)
+end
+
+# AbstractString interface:
+Base.ncodeunits(s::SizedString) = Int(s.length)
+Base.codeunit(::SizedString) = UInt8
+Base.codeunit(s::SizedString, i::Integer) = s.data[i]
+Base.isvalid(s::SizedString, i::Integer) = isvalid(String(s), i)
+Base.String(s::SizedString) = String(UInt8[s.data[i] for i = 1:s.length])
+
+Base.show(io::IO, s::SizedString) = show(io, String(s))
+Base.:(==)(a::SizedString, b::SizedString) = a.length == b.length && a.data == b.data
+Base.hash(s::SizedString, h::UInt) = hash(s.data, hash(s.length, h))
+
+capacity(::SizedString{N}) where {N} = N
+capacity(::Type{SizedString{N}}) where {N} = N
+
+function Base.iterate(s::SizedString, i::Int = 1)
+    i > s.length && return nothing
+    c, j = iterate(String(s), i)  # delegate UTF-8 decoding to String
+    return c, j
+end
+
+function Base.:(==)(a::SizedString, b::AbstractString)
+    bb = codeunits(b)
+    a.length == length(bb) || return false
+    @inbounds for i = 1:a.length
+        a.data[i] == bb[i] || return false
+    end
+    return true
+end
+
 # the "*State" structs should be dynamic. 
 # All static config variables should be stored elsewhere.
 
@@ -57,10 +155,10 @@ abstract type AbstractConstraint<:NetworkMessage end
 # But! want a way to construct the mode table via sockets.
 struct ModeConfig<:AbstractConfig
     id::IDType
-    name::InlineStrings.String63    # todo: method for reinterpret on .String63 that actually works
+    name::SizedString{SOAP_MAX_STRING_LEN}    # todo: method for reinterpret on .String63 that actually works
     # target_type::DataType
-    target_ids::Vector{IDType}      # lookup TargetConfig by ID.
-    constraint_ids::Vector{IDType}  # lookup <:AbstractConstraint by ID.
+    target_ids::IDVector{SOAP_MAX_ID_BUCKET}      # lookup TargetConfig by ID.
+    constraint_ids::IDVector{SOAP_MAX_ID_BUCKET}  # lookup <:AbstractConstraint by ID.
     priority::IDType                # low value => high priority; high value => low priority
     color::Makie.RGBAf
     power_consumption::Float64

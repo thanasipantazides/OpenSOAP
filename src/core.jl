@@ -47,13 +47,18 @@ function run(
 
     println((modes, targets, target_configs, constraints))
 
+    println("connecting to REPL...")
+    sock_repl = setup_client(SOAP_HOST, SOAP_REPL_PORT)
+    println("connected!")
+
     # udp 
     # sock =
     #     setup_server(SOAP_HOST, SOAP_CORE_PORT, SOAP_HOST, SOAP_MON_PORT)
 
     # tcp 
-    sock = setup_server(SOAP_HOST, SOAP_CORE_PORT)
-    println("connected.")
+    println("waiting for monitor connection...")
+    sock_mon = setup_server(SOAP_HOST, SOAP_CORE_PORT)
+    println("connected!")
 
     # unix
     # sock = setup_server(SOAP_UNIX_SOCK)
@@ -74,11 +79,11 @@ function run(
 
 
     @async while do_quit[] != 0x01
-        if !isreadable(sock.sock)
+        if !isreadable(sock_mon.sock)
             do_quit[] = 0x01
         end
 
-        ret = read_transport(sock)
+        ret = read_transport(sock_mon)
         type = ret[1]
         cmd = nothing
         len = 0
@@ -130,13 +135,13 @@ function run(
 
                 # serialize and send data
                 sat_data = packetize(sat, 0x0000, sim.step_count)
-                write_transport(sock, sat_data)
+                write_transport(sock_mon, sat_data)
 
                 # don't need to update Earth/Sun/etc positions as often as spacecraft state---save bandwidth.
                 if sim.step_count % send_targets_per_sat_update == 0
                     for target in values(targets)
                         t_data = packetize(target, 0x0000, sim.step_count)
-                        write_transport(sock, t_data)
+                        write_transport(sock_mon, t_data)
                     end
                 end
 
@@ -163,7 +168,7 @@ function run(
         catch e
             if typeof(e) <: InterruptException
                 println("exiting...")
-                close(sock.sock)
+                close(sock_mon.sock)
                 return -1
             else
                 rethrow(e)

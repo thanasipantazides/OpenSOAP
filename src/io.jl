@@ -112,8 +112,8 @@ function make_mode(
     m = ModeConfig(
         next_id!(id_registry),
         InlineStrings.String63(mode_name),
-        tconfig_ids,
-        constraint_ids,
+        IDVector(tconfig_ids),
+        IDVector(constraint_ids),
         mode["priority"],
         Makie.RGBAf(mode["color"] ./ 255 ...),
         mode["power_consumption"],
