@@ -4,4 +4,5 @@ using Test
     include("rotations.jl")
     include("bounded.jl")
     include("loading.jl")
+    include("network.jl")
 end

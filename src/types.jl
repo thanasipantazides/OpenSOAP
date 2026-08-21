@@ -9,6 +9,7 @@ end
 
 Base.size(v::IDVector) = (v.length,)
 Base.getindex(v::IDVector, k) = v.data[k]
+Base.sizeof(v::IDVector{N}) where {N} = N
 
 function IDVector{N}(v::AbstractVector) where {N}
     if N > SOAP_MAX_ID_BUCKET
@@ -36,8 +37,8 @@ end
 
 # an isbitstype(SizedString) == true wrapper, to enable serialization of strings
 struct SizedString{N} <: AbstractString
+    data::SVector{N,UInt8}
     length::UInt16
-    data::NTuple{N,UInt8}
 end
 
 function SizedString{N}(s::AbstractString) where {N}
@@ -50,7 +51,7 @@ function SizedString{N}(s::AbstractString) where {N}
         throw(ArgumentError("string $s exceeds FixedString capacity $N"))
     end
     padded = ntuple(i -> i <= n ? bytes[i] : 0x00, N)
-    SizedString{N}(UInt8(n), padded)
+    SizedString{N}(padded, UInt8(n))
 end
 
 function SizedString(s::AbstractString)
@@ -64,7 +65,7 @@ function SizedString(s::AbstractString)
     bytes = codeunits(s)
     n = length(bytes)
     padded = ntuple(i -> i <= n ? bytes[i] : 0x00, SOAP_MAX_STRING_LEN)
-    SizedString{SOAP_MAX_STRING_LEN}(UInt8(n), padded)
+    SizedString{SOAP_MAX_STRING_LEN}(padded, UInt8(n))
 end
 
 # AbstractString interface:
@@ -94,6 +95,10 @@ function Base.:(==)(a::SizedString, b::AbstractString)
         a.data[i] == bb[i] || return false
     end
     return true
+end
+
+function GeometryBasics.Mat3d(x::Float64)
+    return Mat3d(fill(x, (3, 3)))
 end
 
 # the "*State" structs should be dynamic. 
@@ -168,7 +173,7 @@ end
 
 struct TargetConfig<:AbstractConfig
     id::IDType
-    name::InlineStrings.String63
+    name::SizedString{SOAP_MAX_STRING_LEN}
     dynamic_id::IDType
     # color::Makie.RGBAf
     data_consumption::Float64
@@ -178,7 +183,7 @@ end
 
 struct MagneticFieldConfig<:AbstractConfig
     id::IDType
-    name::InlineStrings.String63
+    name::SizedString{SOAP_MAX_STRING_LEN}
     dynamic_id::IDType
     normalization::UInt8
     model_order::UInt8
@@ -187,13 +192,13 @@ end
 # placeholder
 struct EarthConfig<:AbstractConfig
     id::IDType
-    name::InlineStrings.String63
+    name::SizedString{SOAP_MAX_STRING_LEN}
     dynamic_id::IDType
 end
 
 @kwdef struct SatelliteConfig<:AbstractConfig
     id::IDType
-    name::InlineStrings.String63
+    name::SizedString{SOAP_MAX_STRING_LEN}
     dynamic_id::IDType
     inertia_Body::Mat3d
     inertia_inv_Body::Mat3d
@@ -233,16 +238,16 @@ function find_config(
     return res
 end
 
-mutable struct PositionState<:AbstractState
-    elapsed_time::Float64
-    position_ECI::Point3d
-    velocity_ECI::Point3d
+@kwdef mutable struct PositionState<:AbstractState
+    elapsed_time::Float64 = 0.0
+    position_ECI::Point3d = Point3d(0.0)
+    velocity_ECI::Point3d = Point3d(0.0)
 end
 
-mutable struct AttitudeState<:AbstractState
-    elapsed_time::Float64
-    angular_velocity_ECI_Body::Vec3d
-    attitude_ECI_Body::Mat3d
+@kwdef mutable struct AttitudeState<:AbstractState
+    elapsed_time::Float64 = 0.0
+    angular_velocity_ECI_Body::Vec3d = Vec3d(0.0)
+    attitude_ECI_Body::Mat3d = Mat3d(I(3))
 end
 
 # note: with separate Pos and Att states, 
@@ -304,45 +309,45 @@ SatelliteState() = SatelliteState(
     0x00,
 )
 
-mutable struct EarthState<:AbstractTarget
-    id::IDType
-    elapsed_time::Float64
-    attitude_ECI_ECEF::Mat3d
+@kwdef mutable struct EarthState<:AbstractTarget
+    id::IDType = 0x00
+    elapsed_time::Float64 = 0.0
+    attitude_ECI_ECEF::Mat3d = Mat3d(I(3))
 end
 
-mutable struct SunState<:AbstractTarget
-    const id::IDType
-    elapsed_time::Float64
-    priority::UInt16 # todo: make this a Mode priority, not Target priority.
-    position_ECI::Point3d
-    visible::Bool
-    selected::Bool
+@kwdef mutable struct SunState<:AbstractTarget
+    const id::IDType = 0x00
+    elapsed_time::Float64 = 0.0
+    priority::UInt16 = 0x00# todo: make this a Mode priority, not Target priority.
+    position_ECI::Point3d = Point3d(0.0)
+    visible::Bool = false
+    selected::Bool = false
 end
 
-mutable struct GroundState<:AbstractTarget
-    const id::IDType
-    elapsed_time::Float64
+@kwdef mutable struct GroundState<:AbstractTarget
+    const id::IDType = 0x00
+    elapsed_time::Float64 = 0.0
 
-    priority::UInt16 # todo: make this a Mode priority, not Target priority.
-    position_LLA::Point3d
-    position_ECI::Point3d
-    visible::Bool
-    selected::Bool
+    priority::UInt16 = 0x00 # todo: make this a Mode priority, not Target priority.
+    position_LLA::Point3d = Point3d(0.0)
+    position_ECI::Point3d = Point3d(0.0)
+    visible::Bool = false
+    selected::Bool = false
 end
 
-mutable struct MagneticFieldState<:AbstractTarget
-    const id::IDType
-    elapsed_time::Float64
+@kwdef mutable struct MagneticFieldState<:AbstractTarget
+    const id::IDType = 0x00
+    elapsed_time::Float64 = 0.0
 
-    direction_ECI::Vec3d
-    visible::Bool
-    available::Bool
-    selected::Bool
+    direction_ECI::Vec3d = Vec3d(0.0)
+    visible::Bool = false
+    available::Bool = false
+    selected::Bool = false
 end
 
 struct LLAConstraint<:AbstractConstraint
     id::IDType
-    name::InlineStrings.String63
+    name::SizedString{SOAP_MAX_STRING_LEN}
     lat::Point2d
     lon::Point2d
     alt::Point2d
@@ -416,9 +421,9 @@ function Base.show(io::IO, confs::Vector{<:AbstractConfig})
 
     els = fill("", (length(confs), 3))
     for (k, c) in enumerate(confs)
-        els[k, 1]="$(c.name)"
-        els[k, 2]="$(string(c.id, base=16, pad=4))"
-        els[k, 3]="-> $(string(c.dynamic_id, base=16, pad=4))"
+        els[k, 1] = "$(c.name)"
+        els[k, 2] = "$(string(c.id, base=16, pad=4))"
+        els[k, 3] = c isa ModeConfig ? "" : "-> $(string(c.dynamic_id, base=16, pad=4))"
     end
     PrettyTables.pretty_table(
         io,
@@ -436,9 +441,10 @@ function Base.show(io::IO, confs::IDDict{<:AbstractConfig})
 
     els = fill("", (length(confs), 3))
     for (k, c) in enumerate(collect(keys(confs)))
-        els[k, 1]="$(confs[c].name)"
-        els[k, 2]="$(string(confs[c].id, base=16, pad=4))"
-        els[k, 3]="-> $(string(confs[c].dynamic_id, base=16, pad=4))"
+        els[k, 1] = "$(confs[c].name)"
+        els[k, 2] = "$(string(confs[c].id, base=16, pad=4))"
+        els[k, 3] =
+            c isa ModeConfig ? "" : "-> $(string(confs[c].dynamic_id, base=16, pad=4))"
     end
     PrettyTables.pretty_table(
         io,

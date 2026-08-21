@@ -10,6 +10,7 @@
 - [x] Add labeling control to monitor.
 - [ ] Add a `initialize_targets()` function or similar, which just calls `step!()` on each target at the initial time and spacecraft position.
 - [ ] In `simulate.jl`, maybe put all configs in a big dict (by ID), ditto for all states. Maybe two dicts, one by ID and another by type. And just pass the dict around instead a bunch of parameters.
+  - [ ] Or put _everything_ into one really big dict? Since the IDs are unique? Less args to throw around everywhere.
 
 ### Complex config
 
@@ -113,8 +114,12 @@ Plan is to use existing network ser/des stuff to pass `<:AbstractConfig` and `<:
 
 Things to do:
 
-- [ ] Make all `<:AbstractConfig` serializable. Maybe switch over to built in serialization if needed.
-  - [ ] In, e.g., `ModeConfig`, `Vector{IDType}` is **not** `isbits()`. Need to use a StaticArray instead, likely. I think this is fine—size of the `ModeConfig.target_ids` list is fixed after initialization.
+- [x] Make all `<:AbstractConfig` serializable. Maybe switch over to built in serialization if needed.
+  - [x] In, e.g., `ModeConfig`, `Vector{IDType}` is **not** `isbits()`. Need to use a StaticArray instead, likely. I think this is fine—size of the `ModeConfig.target_ids` list is fixed after initialization.
+  - This turned out to be very involved. Basically need to rewrite the ser/des functions, but they end up being more generic which is nice. But some side effects:
+    - [x] Stop sending a `(count, <:NetworkMessage)` tuple as the default State message from core to monitor.
+    - [ ] If a dedicated `count` message is needed, create a new dedicated message type for that. (Currently, `count` is unused in monitor).
+    - [x] Add a default constructor for all `<:NetworkMessage` mutable types. This is required for serialization of mutable structs.
 - [x] Add a REPL to CORE IP/port and sockets. REPL process is server, CORE is client.
 - [ ] Set up the socket in CORE and add an async listening process on it. Use `Threads.@spawn`.
   - [ ] Deserialize what comes off the socket and conditionally update some process-wide `IDDict`s if the contents look good.

@@ -111,7 +111,7 @@ function make_mode(
 
     m = ModeConfig(
         next_id!(id_registry),
-        InlineStrings.String63(mode_name),
+        SizedString{SOAP_MAX_STRING_LEN}(mode_name),
         IDVector(tconfig_ids),
         IDVector(constraint_ids),
         mode["priority"],
@@ -240,7 +240,7 @@ function next_id!(id_set::Set{IDType})
 end
 
 function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
-    name = InlineStrings.InlineString63(json["name"])
+    name = SizedString{SOAP_MAX_STRING_LEN}(json["name"])
     data_source = json["direction"]["source"]
     target_type = lookup_target(data_source)
     if target_type === SunState

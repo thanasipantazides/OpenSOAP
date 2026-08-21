@@ -4,9 +4,9 @@ import Sockets
 import JSON
 import RelocatableFolders
 
-import InlineStrings
 using StaticArrays
 
+using LinearAlgebra
 using GeometryBasics
 import Dates
 import DateFormats
@@ -39,6 +39,8 @@ const SOAP_HOST = Sockets.@ip_str("127.0.0.1")
 const SOAP_MON_PORT = UInt16(9999)
 const SOAP_CORE_PORT = UInt16(9993)
 const SOAP_REPL_PORT = UInt16(9997)
+const SOAP_PROTO_RX_VERSION = UInt8(0x00)
+const SOAP_PROTO_TX_VERSION = UInt8(0x00)
 
 # socket input buffer size:
 const SOAP_MAX_BUFF_LEN = 2048
@@ -57,6 +59,7 @@ include("types.jl")
 export SOAP_HOST
 export SOAP_MON_PORT
 export SOAP_CORE_PORT
+export SOAP_MAX_STRING_LEN
 export show
 export convert
 export SizedString
@@ -95,6 +98,7 @@ export worm,
     SatelliteState,
     SunState,
     GroundState,
+    SatelliteConfig,
     ModeConfig,
     TargetConfig,
     SimConfig,
