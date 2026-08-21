@@ -123,8 +123,8 @@ abstract type ControlMessage<:NetworkMessage end
 
 A message used to pause or play the simulation. A value of 0x00 is paused.
 """
-mutable struct PlayMessage<:ControlMessage
-    message::UInt8
+@kwdef mutable struct PlayMessage<:ControlMessage
+    message::UInt8 = 0x00
 end
 
 """
@@ -132,19 +132,19 @@ end
 
 A message used to speed up or slow down the simulation.
 """
-mutable struct RateMessage<:ControlMessage
-    message::UInt8
+@kwdef mutable struct RateMessage<:ControlMessage
+    message::UInt8 = 0x00
 end
 
-mutable struct QuitMessage<:ControlMessage
-    message::UInt8
+@kwdef mutable struct QuitMessage<:ControlMessage
+    message::UInt8 = 0x00
 end
 
-mutable struct PerturbationMessage<:ControlMessage
-    moment_Body::Vec3d
-    moment_duration::UInt32 # number of counter steps to sustain
-    force_ECI::Vec3d
-    force_duration::UInt32 # number of counter steps to sustain
+@kwdef mutable struct PerturbationMessage<:ControlMessage
+    moment_Body::Vec3d = Vec3d(0.0)
+    moment_duration::UInt32 = 0x00 # number of counter steps to sustain
+    force_ECI::Vec3d = Vec3d(0.0)
+    force_duration::UInt32 = 0x00# number of counter steps to sustain
 end
 
 # some static configuration for stuff the mission wants to look at

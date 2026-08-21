@@ -347,7 +347,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     last_met = 0.0
     lastratetime = time()
 
-    packlen = length(packetize(SatelliteState(), 0x0000, UInt64(0)))
+    packlen = length(packetize(SatelliteState(), 0x0000))
     packlen = 1
     headbuff = zeros(UInt8, 8)
 
@@ -424,7 +424,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 else
                     println("oh no!!!")
                 end
-                writeval = packetize(PlayMessage(UInt8(play[])), 0x0000, UInt64(1))
+                writeval = packetize(PlayMessage(UInt8(play[])), 0x0000)
                 write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
@@ -432,7 +432,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             if event.key == Keyboard.left && play[] == 0x01
                 sleep_size[] = max(0, sleep_size[] - sleepstep)
                 cmd_label[] = "<<"
-                writeval = packetize(RateMessage(UInt8(sleep_size[])), 0x0000, UInt64(2))
+                writeval = packetize(RateMessage(UInt8(sleep_size[])), 0x0000)
                 write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
@@ -440,7 +440,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             if event.key == Keyboard.right && play[] == 0x01
                 sleep_size[] = min(0xff, sleep_size[] + sleepstep)
                 cmd_label[] = ">>"
-                writeval = packetize(RateMessage(UInt8(sleep_size[])), 0x0000, UInt64(2))
+                writeval = packetize(RateMessage(UInt8(sleep_size[])), 0x0000)
                 write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
@@ -448,7 +448,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             if event.key == Keyboard.k && play[] == 0x01
                 # todo: configure perturbation magnitude and duration elsewhere
                 pert = PerturbationMessage(Vec3d(1e-2*rand(3)), 5, Vec3d(0.0), 1)
-                writeval = packetize(pert, 0x0000, UInt64(0))
+                writeval = packetize(pert, 0x0000)
                 cmd_label[] = "kicked!"
                 write_transport(sock, writeval)
                 notify(cmd_label)
@@ -508,7 +508,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             if event.key == Keyboard.q
                 do_quit[] = true
                 cmd_label[] = "exiting..."
-                writeval = packetize(QuitMessage(0x01), 0x0000, UInt64(2))
+                writeval = packetize(QuitMessage(0x01), 0x0000)
                 write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
@@ -521,15 +521,13 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
             ret = read_transport(sock; buff = rx_buff)
             type = ret[1]
-            count = 0
-            flags = 0
             len = 0
+            flags = 0
             simdata = UInt8[]
             if type<:AbstractState
                 len = ret[2]
                 flags = ret[3]
-                count = ret[4]
-                simdata = ret[5]
+                simdata = ret[4]
             end
 
             if typeof(simdata) === PositionState # unused
@@ -862,20 +860,21 @@ function write_csv(
 
     rx_buff = zeros(UInt8, SOAP_MAX_BUFF_LEN)
     met = 0.0
+    this_count = UInt64(0x00)
     while !eof(sock.sock)
         try
 
             ret = read_transport(sock; buff = rx_buff)
             type = ret[1]
-            count = 0
             flags = 0
             len = 0
             simdata = UInt8[]
             if type<:AbstractState
                 len = ret[2]
                 flags = ret[3]
-                count = ret[4]
-                simdata = ret[5]
+                simdata = ret[4]
+
+                this_count += 1
             end
 
             if typeof(simdata) === EarthState

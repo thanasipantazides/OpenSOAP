@@ -48,7 +48,7 @@ function run(
     println((modes, targets, target_configs, constraints))
 
     println("connecting to REPL...")
-    sock_repl = setup_client(SOAP_HOST, SOAP_REPL_PORT)
+    # sock_repl = setup_client(SOAP_HOST, SOAP_REPL_PORT)
     println("connected!")
 
     # udp 
@@ -89,9 +89,11 @@ function run(
         len = 0
         flags = nothing
         if type<:ControlMessage
-            flags = ret[2]
-            len = ret[3]
+            len = ret[2]
+            flags = ret[3]
             cmd = ret[4]
+        else
+            continue
         end
 
         if type === PlayMessage
@@ -134,13 +136,13 @@ function run(
                 time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
 
                 # serialize and send data
-                sat_data = packetize(sat, 0x0000, sim.step_count)
+                sat_data = packetize(sat, 0x0000)
                 write_transport(sock_mon, sat_data)
 
                 # don't need to update Earth/Sun/etc positions as often as spacecraft state---save bandwidth.
                 if sim.step_count % send_targets_per_sat_update == 0
                     for target in values(targets)
-                        t_data = packetize(target, 0x0000, sim.step_count)
+                        t_data = packetize(target, 0x0000)
                         write_transport(sock_mon, t_data)
                     end
                 end
@@ -235,11 +237,11 @@ function run_free(; config_path::AbstractString = joinpath("config", "example.js
         time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
 
         # serialize data
-        sat_data = packetize(sat, 0x0000, sim.step_count)
-        earth_data = packetize(earth_state, 0x0000, sim.step_count)
+        sat_data = packetize(sat, 0x0000)
+        earth_data = packetize(earth_state, 0x0000)
 
         for target in values(targets)
-            t_data = packetize(target, 0x0000, sim.step_count)
+            t_data = packetize(target, 0x0000)
         end
 
 
