@@ -13,6 +13,10 @@ function main()
     sim, sat, sat_config, targets, target_configs, constraints, modes =
         OpenSOAP.load_config(Dict(OpenSOAP.load_jsonc(fconfig)))
 
+
+    conn_repl =
+        Threads.@spawn OpenSOAP.setup_server(OpenSOAP.SOAP_HOST, OpenSOAP.SOAP_REPL_PORT)
+
     println("launching core...")
     fcore = @spawnat workers()[1] OpenSOAP.run(
         sim,
@@ -29,7 +33,8 @@ function main()
 
     # fm = fetch(fcore)
 
+    connected = fetch(conn_repl)
     sleep(1)
 
-    return targets, target_configs
+    return connected, sim, sat, sat_config, targets, target_configs, constraints, modes
 end

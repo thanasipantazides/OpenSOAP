@@ -48,7 +48,7 @@ function run(
     println((modes, targets, target_configs, constraints))
 
     println("connecting to REPL...")
-    # sock_repl = setup_client(SOAP_HOST, SOAP_REPL_PORT)
+    sock_repl = setup_client(SOAP_HOST, SOAP_REPL_PORT)
     println("connected!")
 
     # udp 
@@ -110,6 +110,29 @@ function run(
         end
         if type === QuitMessage
             do_quit[] = cmd.message
+        end
+    end
+
+    # look for updates from REPL
+    @async while do_quit[] != 0x01
+        if !isreadable(sock_repl.sock)
+            do_quit[] = 0x01
+        end
+
+        ret = read_transport(sock_repl)
+        type = ret[1]
+        len = ret[2]
+        flags = ret[3]
+        field = ret[4]
+        println("< received $type from REPL")
+
+        if field isa TargetConfig
+            target_configs[field.id] = field
+            println("< changed $(field.id)")
+        end
+        if typeof(field) <: AbstractTarget
+            targets[field.id] = field
+            println("< changed $(field.id)")
         end
     end
 

@@ -70,6 +70,7 @@ include("simulate.jl")
 include("monitor.jl")
 include("network.jl")
 include("io.jl")
+include("repl.jl")
 
 
 export worm,
@@ -123,7 +124,8 @@ export worm,
     load_earth_texture_to_ecef,
     load_jsonc,
     load_config,
-    check_ids
+    check_ids,
+    update
 
 export reinterpret
 
