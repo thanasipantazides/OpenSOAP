@@ -393,6 +393,17 @@ function *(c::Real, a::AttitudeState)
     return AttitudeState(a.elapsed_time, c*a.angular_velocity_ECI_Body, a.attitude_ECI_Body)
 end
 
+"""
+    mut_struct_eq(ls, rs)::Bool
+
+check for equality of all fields of mutable structs. 
+
+Note that for two mutable structs T and S, T == S is always false.
+"""
+function mut_struct_eq(ls, rs)::Bool
+    return all(getproperty(ls, f) == getproperty(rs, f) for f in propertynames(ls))
+end
+
 function lookup_igrf_normalization(value::AbstractString)::UInt8
     d = Dict{String,UInt8}("none" => 0x00, "nadir" => 0x01, "zenith" => 0x02)
     if value in keys(d)

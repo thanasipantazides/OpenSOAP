@@ -3,6 +3,9 @@ uuid = "2c6d34cf-35ee-49d7-b3b5-1bd6781e04ee"
 version = "0.1.0"
 authors = ["Thanasi Pantazides <thanasipantazides@gmail.com>"]
 
+[workspace]
+projects = ["docs"]
+
 [deps]
 AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
@@ -19,6 +22,7 @@ JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 JSONSchema = "7d188eb4-7ad8-530c-ae41-71a32a6d4692"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+Observables = "510215fc-4207-5dde-b226-833fc4488ee2"
 PackageCompiler = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
 PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
@@ -49,6 +53,7 @@ JSON = "1.5.0"
 JSONSchema = "1.5.0"
 LinearAlgebra = "1.12.0"
 Makie = "0.24.10"
+Observables = "0.5.5"
 PackageCompiler = "2.4.0"
 PrettyTables = "3.4.4"
 Printf = "1.11.0"
@@ -63,6 +68,3 @@ Serialization = "1.11.0"
 Sockets = "1.11.0"
 StaticArrays = "1.9.18"
 Test = "1.11.0"
-
-[workspace]
-projects = ["docs"]
