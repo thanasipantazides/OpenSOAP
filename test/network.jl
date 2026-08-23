@@ -1,17 +1,6 @@
 using Test
 using OpenSOAP
 
-"""
-    mut_struct_eq(ls, rs)::Bool
-
-check for equality of all fields of mutable structs. 
-
-Note that for two mutable structs T and S, T == S is always false.
-"""
-function mut_struct_eq(ls, rs)::Bool
-    return all(getproperty(ls, f) == getproperty(rs, f) for f in propertynames(ls))
-end
-
 @testset "ser/des roundtrip tests" begin
     testjsonpath = joinpath("..", "config", "example.jsonc")
     if !isfile(testjsonpath)
