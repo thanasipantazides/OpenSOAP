@@ -78,8 +78,12 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     earth_mesh_v = get_sphere_mesh()
     body_mesh_val = get_body_mesh()
 
-    sim, sat, sat_config, target_states, target_configs, constraints, modes =
-        handle_new_config(config_path)
+    sim, sat, sat_config, sim_environment = handle_new_config(config_path)
+
+    target_states = filtertype(AbstractTarget, sim_environment)
+    target_configs = filtertype(AbstractConfig, sim_environment)
+    constraints = filtertype(AbstractConstraint, sim_environment)
+    modes = filtertype(ModeConfig, sim_environment)
 
     helpstring = """
         Commands:

@@ -10,7 +10,10 @@
 - [x] Add labeling control to monitor.
 - [ ] Add a `initialize_targets()` function or similar, which just calls `step!()` on each target at the initial time and spacecraft position.
 - [ ] In `simulate.jl`, maybe put all configs in a big dict (by ID), ditto for all states. Maybe two dicts, one by ID and another by type. And just pass the dict around instead a bunch of parameters.
-  - [ ] Or put _everything_ into one really big dict? Since the IDs are unique? Less args to throw around everywhere.
+  - [ ] Or put _everything_ into one really big dict? Since the IDs are unique? Less args to throw around everywhere. To do this:
+    - [ ] Everywhere `modes::Vector{ModeConfig}` appears, replace with `modes::IDDict{ModeConfig}` and update local logic accordingly.
+    - [ ] Everywhere `(target_states, target_configs, constraints, modes)` appear together, merge into one `IDDict`. Update local logic to also find based on type, if needed.
+      - [x] `io.jl`
 
 ### Complex config
 

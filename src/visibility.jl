@@ -50,7 +50,6 @@ function set_visibility!(
     sat::SatelliteState,
     sat_config::SatelliteConfig,
     t::Dates.DateTime,
-    modes::Vector{ModeConfig},
 )
     sun.visible =
         sun.position_ECI'*sat.position_ECI / norm(sun.position_ECI) /
@@ -70,7 +69,6 @@ function set_visibility!(
     sat::SatelliteState,
     sat_config::SatelliteConfig,
     t::Dates.DateTime,
-    modes::Vector{ModeConfig},
 )
     gs.visible =
         (sat.position_ECI - gs.position_ECI)'*gs.position_ECI /
@@ -84,7 +82,6 @@ function set_visibility!(
     sat::SatelliteState,
     sat_config::SatelliteConfig,
     t::Dates.DateTime,
-    modes::Vector{ModeConfig},
 )
     mag.visible = true
 end

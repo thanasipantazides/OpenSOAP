@@ -224,8 +224,11 @@ end
 function find_config(
     state::AbstractState,
     config_lookup::Vector{T},
-) where {T<:AbstractConfig}
-    res = findfirst(p -> p.dynamic_id == state.id, config_lookup)
+) where {T<:NetworkMessage}
+    res = findfirst(
+        p -> p isa AbstractConfig && !(p isa ModeConfig) && p.dynamic_id == state.id,
+        config_lookup,
+    )
     return config_lookup[res]
 end
 
@@ -233,9 +236,16 @@ end
 function find_config(
     state::AbstractState,
     config_lookup::IDDict{T},
-) where {T<:AbstractConfig}
-    res = config_lookup[findfirst(p -> p.dynamic_id == state.id, config_lookup)]
+) where {T<:NetworkMessage}
+    res = config_lookup[findfirst(
+        p -> p isa AbstractConfig && !(p isa ModeConfig) && p.dynamic_id == state.id,
+        config_lookup,
+    )]
     return res
+end
+
+function filtertype(T::DataType, sim_environment::IDDict{S}) where {S}
+    return filter(s -> typeof(s.second) <: T, sim_environment)
 end
 
 @kwdef mutable struct PositionState<:AbstractState

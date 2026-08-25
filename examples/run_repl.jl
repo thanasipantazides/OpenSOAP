@@ -12,23 +12,14 @@ println("running with $(nprocs()) workers")
 function main()
     fconfig = joinpath("config", "example.jsonc")
 
-    sim, sat, sat_config, targets, target_configs, constraints, modes =
-        OpenSOAP.load_config(Dict(OpenSOAP.load_jsonc(fconfig)))
+    sim, sat, sim_environment = OpenSOAP.load_config(Dict(OpenSOAP.load_jsonc(fconfig)))
 
 
     conn_repl =
         Threads.@spawn OpenSOAP.setup_server(OpenSOAP.SOAP_HOST, OpenSOAP.SOAP_REPL_PORT)
 
     println("launching core...")
-    fcore = @spawnat workers()[1] OpenSOAP.run(
-        sim,
-        sat,
-        sat_config,
-        targets,
-        target_configs,
-        constraints,
-        modes,
-    )
+    fcore = @spawnat workers()[1] OpenSOAP.run(sim, sat, sim_environment)
     sleep(3)
     println("launching monitor...")
     fmon = @spawnat workers()[2] OpenSOAP.monitor(config_path = fconfig)
@@ -39,7 +30,8 @@ function main()
     #   - return to REPL from this main() function, get obs_targets
     #   - lookup in obs_targets[][id]
     #   - overwrite obs_targets[][id] or obs_targets[][id].field
-    #   - call notify(obs_targets)
+    #   - call notify(obs_targets) and see results!
+
     targets2 = deepcopy(targets)
     obs_targets = Observable(targets2)
     on(obs_targets) do ot

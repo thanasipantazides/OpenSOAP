@@ -567,43 +567,34 @@ function load_config(d::Dict{String,Any})
     sat.mode = values(modes)[1].id
     sat.target = [values(target_states)...][1].id
 
-    check_ids(
-        sat,
-        sat_config,
-        target_states::IDDict{<:AbstractState},
-        target_configs::IDDict{<:AbstractConfig},
-        constraints::IDDict{<:AbstractConstraint},
-        modes,
-    )
+    sim_environment = merge(target_states, target_configs, constraints, IDDict(modes))
 
-    return (sim, sat, sat_config, target_states, target_configs, constraints, modes)
+    check_ids(sat, sat_config, sim_environment)
+
+    return (sim, sat, sat_config, sim_environment)
 end
 
-function check_ids(
-    sat,
-    sat_config,
-    target_states::IDDict{<:AbstractState},
-    target_configs::IDDict{<:AbstractConfig},
-    constraints::IDDict{<:AbstractConstraint},
-    modes,
-)
+function check_ids(sat, sat_config, sim_environment::IDDict{<:NetworkMessage})
     good = true
     good = good && sat_config.dynamic_id == sat.id
-    for (k, v) in target_configs
+    for (k, v) in sim_environment
         # self-consistency
         good = good && k == v.id
         # reference check
-        good = good && v.dynamic_id in keys(target_states)
+        if typeof(sim_environment[k]) <: AbstractConfig &&
+           !isa(sim_environment[k], ModeConfig)
+            good = good && v.dynamic_id in keys(sim_environment)
+        end
     end
 
-    for mode in modes
-        for tc in mode.target_ids
-            good = good && tc in keys(target_configs)
-        end
-        for c in mode.constraint_ids
-            good = good && c in keys(constraints)
-        end
-    end
+    # for mode in modes
+    #     for tc in mode.target_ids
+    #         good = good && tc in keys(target_configs)
+    #     end
+    #     for c in mode.constraint_ids
+    #         good = good && c in keys(constraints)
+    #     end
+    # end
     return good
 end
 

@@ -2,19 +2,15 @@
 
 
 function run(; config_path::AbstractString = joinpath("config", "example.jsonc"))
-    sim, sat, sat_config, targets, target_configs, constraints, modes =
-        load_config(Dict(load_jsonc(config_path)))
-    return run(sim, sat, sat_config, targets, target_configs, constraints, modes)
+    sim, sat, sat_config, sim_environment = load_config(Dict(load_jsonc(config_path)))
+    return run(sim, sat, sat_config, sim_environment)
 end
 
 function run(
     sim::SimConfig,
     sat::SatelliteState,
     sat_config::SatelliteConfig,
-    targets::IDDict{<:AbstractState},
-    target_configs::IDDict{<:AbstractConfig},
-    constraints::IDDict{<:AbstractConstraint},
-    modes::Vector{ModeConfig},
+    sim_environment::IDDict{<:NetworkMessage},
 )# config_path::AbstractString = joinpath("config", "example.jsonc"))
 
     # sim, sat, sat_config, targets, target_configs, constraints, modes =
@@ -43,9 +39,12 @@ function run(
         "do_J2" => true,
     )
 
+    target_states = filter(s -> typeof(s.second) <: AbstractState, sim_environment)
+    target_configs = filter(s -> typeof(s.second) <: AbstractConfig, sim_environment)
     println(collect(values(target_configs)))
 
-    println((modes, targets, target_configs, constraints))
+    # todo: replace this @show call with something that takes in a full sim_environement dict
+    # println((modes, targets, target_configs, constraints))
 
     println("connecting to REPL...")
     sock_repl = setup_client(SOAP_HOST, SOAP_REPL_PORT)
@@ -126,12 +125,8 @@ function run(
         field = ret[4]
         println("< received $type from REPL")
 
-        if field isa TargetConfig
-            target_configs[field.id] = field
-            println("< changed $(field.id)")
-        end
-        if typeof(field) <: AbstractTarget
-            targets[field.id] = field
+        if type <: AbstractConfig || type <: AbstractConstraint || type <: AbstractState
+            sim_environment[field.id] = field
             println("< changed $(field.id)")
         end
     end
@@ -145,10 +140,7 @@ function run(
                 step_sim!(
                     sat,
                     sat_config,
-                    targets,
-                    target_configs,
-                    constraints,
-                    modes,
+                    sim_environment,
                     sim.time_step,
                     time,
                     params;
@@ -164,7 +156,7 @@ function run(
 
                 # don't need to update Earth/Sun/etc positions as often as spacecraft state---save bandwidth.
                 if sim.step_count % send_targets_per_sat_update == 0
-                    for target in values(targets)
+                    for target in values(target_states)
                         t_data = packetize(target, 0x0000)
                         write_transport(sock_mon, t_data)
                     end
@@ -209,8 +201,7 @@ end
 # same as run(), but no socket communication. For testing.
 function run_free(; config_path::AbstractString = joinpath("config", "example.jsonc"))
 
-    sim, sat, sat_config, targets, target_configs, constraints, modes =
-        load_config(Dict(load_jsonc(config_path)))
+    sim, sat, sat_config, sim_environment = load_config(Dict(load_jsonc(config_path)))
 
     inertia_B = diagm([5, 10, 13])*1e-2
 
@@ -238,6 +229,8 @@ function run_free(; config_path::AbstractString = joinpath("config", "example.js
         ),
     )
 
+    targets = filter(c -> c.second isa AbstractTarget, sim_environment)
+
     packlen = 1
 
     time = sim.start_time
@@ -245,17 +238,7 @@ function run_free(; config_path::AbstractString = joinpath("config", "example.js
     # run simulation
     while true
         # update all dynamic systems
-        step_sim!(
-            sat,
-            sat_config,
-            targets,
-            target_configs,
-            constraints,
-            modes,
-            sim.time_step,
-            time,
-            params;
-        )
+        step_sim!(sat, sat_config, sim_environment, sim.time_step, time, params;)
         # update timestep
         time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
 
