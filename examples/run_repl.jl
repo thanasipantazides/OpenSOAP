@@ -12,14 +12,15 @@ println("running with $(nprocs()) workers")
 function main()
     fconfig = joinpath("config", "example.jsonc")
 
-    sim, sat, sim_environment = OpenSOAP.load_config(Dict(OpenSOAP.load_jsonc(fconfig)))
+    sim, sat, sat_config, sim_environment =
+        OpenSOAP.load_config(Dict(OpenSOAP.load_jsonc(fconfig)))
 
 
     conn_repl =
         Threads.@spawn OpenSOAP.setup_server(OpenSOAP.SOAP_HOST, OpenSOAP.SOAP_REPL_PORT)
 
     println("launching core...")
-    fcore = @spawnat workers()[1] OpenSOAP.run(sim, sat, sim_environment)
+    fcore = @spawnat workers()[1] OpenSOAP.run(sim, sat, sat_config, sim_environment)
     sleep(3)
     println("launching monitor...")
     fmon = @spawnat workers()[2] OpenSOAP.monitor(config_path = fconfig)
@@ -32,28 +33,25 @@ function main()
     #   - overwrite obs_targets[][id] or obs_targets[][id].field
     #   - call notify(obs_targets) and see results!
 
-    targets2 = deepcopy(targets)
-    obs_targets = Observable(targets2)
-    on(obs_targets) do ot
+    sim_env = deepcopy(sim_environment)
+    obs_env = Observable(sim_env)
+    on(obs_env) do oe
         println("called back")
-        println("keys: ", keys(ot))
-        for k in keys(ot)
-            if !(k in keys(targets)) || !OpenSOAP.mut_struct_eq(ot[k], targets[k])
+        for k in keys(oe)
+            if !(k in keys(sim_environment)) ||
+               !OpenSOAP.mut_struct_eq(oe[k], sim_environment[k])
                 println("updating $k")
-                packet = OpenSOAP.packetize(ot[k], 0x0000)
+                packet = OpenSOAP.packetize(oe[k], 0x0000)
                 OpenSOAP.write_transport(connected_sock, packet)
             end
         end
     end
 
-    sleep(1)
+    # when the core process eventually ends, close the socket.
+    Threads.@spawn begin
+        fm = fetch(fcore)
+        close(connected_sock.sock)
+    end
 
-    return connected_sock,
-    sim,
-    sat,
-    sat_config,
-    obs_targets,
-    target_configs,
-    constraints,
-    modes
+    return connected_sock, sim, sat, sat_config, obs_env
 end

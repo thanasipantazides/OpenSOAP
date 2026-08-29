@@ -119,6 +119,14 @@ An abstract type used for controlling the simulation speed or execution.
 abstract type ControlMessage<:NetworkMessage end
 
 """
+    AskMessage<:ControlMessage
+
+A message used to ask the core simulation for a value.
+"""
+@kwdef mutable struct AskMessage<:ControlMessage
+    message::IDType = 0x00
+end
+"""
     PlayMessage<:ControlMessage
 
 A message used to pause or play the simulation. A value of 0x00 is paused.

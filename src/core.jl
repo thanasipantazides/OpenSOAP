@@ -62,6 +62,8 @@ function run(
     # unix
     # sock = setup_server(SOAP_UNIX_SOCK)
 
+    sim_env_lock = ReentrantLock()
+
     play = Ref(UInt8(0x01))
     do_quit = Ref(UInt8(0x00))
     playrate = Ref(UInt8(0x01))
@@ -77,7 +79,7 @@ function run(
     # todo: factor this out of the run() function.
 
 
-    @async while do_quit[] != 0x01
+    Threads.@spawn while do_quit[] != 0x01
         if !isreadable(sock_mon.sock)
             do_quit[] = 0x01
         end
@@ -113,7 +115,7 @@ function run(
     end
 
     # look for updates from REPL
-    @async while do_quit[] != 0x01
+    Threads.@spawn while do_quit[] != 0x01
         if !isreadable(sock_repl.sock)
             do_quit[] = 0x01
         end
@@ -126,8 +128,23 @@ function run(
         println("< received $type from REPL")
 
         if type <: AbstractConfig || type <: AbstractConstraint || type <: AbstractState
-            sim_environment[field.id] = field
-            println("< changed $(field.id)")
+            lock(sim_env_lock) do
+                sim_environment[field.id] = field
+            end
+            println("< changed $(field.id) to: $field")
+            if field isa AbstractConfig || field isa AbstractConstraint
+                # forward it to monitor for update. Otherwise, if it is an AbstractState, it will be updated during the integration step.
+                newval = packetize(field, 0x0002)
+                write_transport(sock_mon, newval)
+                println("> core pushed config update to monitor")
+            end
+        elseif field isa AskMessage
+            lock(sim_env_lock) do
+                if field.message in keys(sim_environment)
+                    resp = packetize(sim_environment[field.message], 0x0003)
+                    write_transport(sock_repl, resp)
+                end
+            end
         end
     end
 
@@ -137,16 +154,18 @@ function run(
         try
             if play[] == 0x01
                 # update all dynamic systems
-                step_sim!(
-                    sat,
-                    sat_config,
-                    sim_environment,
-                    sim.time_step,
-                    time,
-                    params;
-                    exog = perturbation[],
-                )
 
+                lock(sim_env_lock) do
+                    step_sim!(
+                        sat,
+                        sat_config,
+                        sim_environment,
+                        sim.time_step,
+                        time,
+                        params;
+                        exog = perturbation[],
+                    )
+                end
                 # update timestep
                 time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
 
@@ -156,9 +175,11 @@ function run(
 
                 # don't need to update Earth/Sun/etc positions as often as spacecraft state---save bandwidth.
                 if sim.step_count % send_targets_per_sat_update == 0
-                    for target in values(target_states)
-                        t_data = packetize(target, 0x0000)
-                        write_transport(sock_mon, t_data)
+                    for k in keys(sim_environment)
+                        if sim_environment[k] isa AbstractTarget
+                            t_data = packetize(sim_environment[k], 0x0000)
+                            write_transport(sock_mon, t_data)
+                        end
                     end
                 end
 

@@ -81,7 +81,10 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     sim, sat, sat_config, sim_environment = handle_new_config(config_path)
 
     target_states = filtertype(AbstractTarget, sim_environment)
-    target_configs = filtertype(AbstractConfig, sim_environment)
+    target_configs = filter(
+        p -> p.second isa AbstractConfig && !(p.second isa ModeConfig),
+        sim_environment,
+    )
     constraints = filtertype(AbstractConstraint, sim_environment)
     modes = filtertype(ModeConfig, sim_environment)
 
@@ -532,6 +535,10 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 len = ret[2]
                 flags = ret[3]
                 simdata = ret[4]
+            elseif type<:AbstractConfig || type<:AbstractConstraint
+                flags = ret[3]
+                simdata = ret[4]
+                println("< received object $simdata")
             end
 
             if typeof(simdata) === PositionState # unused
@@ -567,7 +574,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 target_states[simdata.id] = simdata
 
             elseif typeof(simdata) === GroundState
-                gs_dict[simdata.id] = simdata
+                # gs_dict[simdata.id] = simdata
                 target_states[simdata.id] = simdata
 
             elseif typeof(simdata) === SatelliteState
@@ -689,16 +696,26 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             end
 
             # update all groundstations
-            gs_pts[] = [gs_dict[key].position_ECI for key in keys(gs_dict)]
-            notify(gs_pts)
-            gs_label_pts[] = [1.1*gs_dict[key].position_ECI for key in keys(gs_dict)]
-            notify(gs_label_pts)
-            gs_labels[] = [
-                string(find_config(gs_dict[key], target_configs).name) for
-                key in keys(gs_dict)
+            gs_pts[] = [
+                target_states[key].position_ECI for
+                key in keys(target_states) if target_states[key] isa GroundState
             ]
+            gs_label_pts[] = [
+                1.1*target_states[key].position_ECI for
+                key in keys(target_states) if target_states[key] isa GroundState
+            ]
+            gs_labels[] = [
+                string(find_config(target_states[key], target_configs).name) for
+                key in keys(target_states) if target_states[key] isa GroundState
+            ]
+            gs_col[] = [
+                target_states[key].visible ? gscolor : idlecolor for
+                key in keys(target_states) if target_states[key] isa GroundState
+            ]
+
+            notify(gs_pts)
+            notify(gs_label_pts)
             notify(gs_labels)
-            gs_col[] = [gs_dict[key].visible ? gscolor : idlecolor for key in keys(gs_dict)]
             notify(gs_col)
 
             bytecount += len + 8

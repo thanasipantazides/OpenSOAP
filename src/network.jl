@@ -25,6 +25,7 @@ global const MESSAGE_TYPES = Dict{DataType,UInt16}(
     PlayMessage => 0x0c01,
     RateMessage => 0x0c02,
     QuitMessage => 0x0c03,
+    AskMessage => 0x0c04,
     PerturbationMessage => 0x0cd0,
 )
 
