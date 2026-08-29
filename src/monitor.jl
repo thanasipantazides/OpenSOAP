@@ -539,6 +539,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 flags = ret[3]
                 simdata = ret[4]
                 println("< received object $simdata")
+                sim_environment[simdata.id] = simdata
             end
 
             if typeof(simdata) === PositionState # unused
@@ -615,7 +616,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 GLMakie.translate!(body_frame, pos_ECI[][end])
 
                 # update color and target direction
-                mode_conf = modes[findfirst(x -> x.id == simdata.mode, modes)]
+                mode_conf = sim_environment[simdata.mode]
+
                 target_rel_ECI[] = simdata.attitude_ECI_Body*mode_conf.direction_Body
                 notify(target_rel_ECI)
 
