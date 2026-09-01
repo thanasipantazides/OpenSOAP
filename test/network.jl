@@ -6,9 +6,12 @@ using OpenSOAP
     if !isfile(testjsonpath)
         error("file $testjsonpath is not a file!")
     end
-    sim, sat, sat_config, target_states, target_configs, constraints, modes =
-        load_config(Dict(load_jsonc(testjsonpath)))
-    println("\n\n$sat\n\n")
+    sim, sat, sat_config, sim_env = load_config(Dict(load_jsonc(testjsonpath)))
+
+    target_states = filter(p -> p isa AbstractTarget, sim_env)
+    target_configs = filter(p -> p isa AbstractConfig && !(p isa ModeConfig), sim_env)
+    constraints = filter(p -> p isa AbstractConstraint, sim_env)
+    modes = filter(p -> p isa ModeConfig, sim_env)
 
     @testset "SatelliteState and Config" begin
         @test mut_struct_eq(sat, des(SatelliteState, ser(sat)))

@@ -92,6 +92,7 @@ export IDType, IDDict, IDVector, SizedString
 export NetworkMessage,
     AbstractState,
     AbstractConfig,
+    AbstractConstraint,
     AbstractTarget,
     ControlMessage,
     PlayMessage,
@@ -108,7 +109,7 @@ export NetworkMessage,
     ModeConfig,
     TargetConfig,
     SimConfig
-export find_config
+export find_config, mut_struct_eq
 
 # serialization/deserialization and network methods
 export ser, des, packetize, unpacketize, behead
