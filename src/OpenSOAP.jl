@@ -94,6 +94,7 @@ export NetworkMessage,
     AbstractConfig,
     AbstractConstraint,
     AbstractTarget,
+    AbstractTargetConfig,
     ControlMessage,
     PlayMessage,
     RateMessage,
@@ -107,9 +108,12 @@ export NetworkMessage,
     GroundState,
     SatelliteConfig,
     ModeConfig,
-    TargetConfig,
+    GroundConfig,
+    SunConfig,
+    MagneticFieldConfig,
+    EarthConfig,
     SimConfig
-export find_config, mut_struct_eq
+export find_config, find_mode, mut_struct_eq
 
 # serialization/deserialization and network methods
 export ser, des, packetize, unpacketize, behead

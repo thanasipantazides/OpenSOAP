@@ -63,7 +63,7 @@ end
 
 function lookup_target_config(
     name::AbstractString,
-    target_configs::Vector{TargetConfig},
+    target_configs::Vector{<:AbstractTargetConfig},
 )::Union{Nothing,IDType}
     res = findfirst(t -> t.name==name, target_configs)
     if isnothing(res)
@@ -253,7 +253,7 @@ function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
             false,
         )
 
-        config = TargetConfig(next_id!(id_registry), json["name"], state.id, 0.0, pi, pi/2)
+        config = SunConfig(next_id!(id_registry), json["name"], state.id, 0.0, pi, pi/2)
         return (state, config)
 
     elseif target_type === EarthState
@@ -291,7 +291,7 @@ function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
             false,
             false,
         )
-        config = TargetConfig(
+        config = GroundConfig(
             next_id!(id_registry),
             json["name"],
             state.id,
@@ -381,7 +381,7 @@ end
 function lookup_target_state(
     name::AbstractString,
     target_states::Vector{Union{Nothing,AbstractTarget}},
-    target_configs::Vector{TargetConfig},
+    target_configs::Vector{<:AbstractTargetConfig},
 )
     # compare the `name` to the .name value in target config, return the state that matches.
 

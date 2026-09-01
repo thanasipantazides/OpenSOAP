@@ -161,7 +161,7 @@ end
 
 function step!(
     sun::SunState,
-    sun_config::TargetConfig,
+    sun_config::SunConfig,
     sat::SatelliteState,
     sat_config::SatelliteConfig,
     dt::Float64,
@@ -175,7 +175,7 @@ end
 
 function step!(
     gs::GroundState,
-    gs_config::TargetConfig,
+    gs_config::GroundConfig,
     sat::SatelliteState,
     sat_config::SatelliteConfig,
     dt::Float64,
@@ -404,8 +404,7 @@ function set_mode!(
 )
     modes = filter(c -> c.second isa ModeConfig, sim_environment) |> values |> collect
     constraints = filter(c -> c.second isa AbstractConstraint, sim_environment)
-    target_configs =
-        filter(c -> c.second isa AbstractConfig && !(c isa ModeConfig), sim_environment)
+    target_configs = filter(c -> c.second isa AbstractTargetConfig, sim_environment)
 
     visible_mode_ids = Set{IDType}()
     allowed_modes = ModeConfig[]
@@ -543,7 +542,7 @@ function step_sim!(
     sat = step_satellite(sat, dt, params)
 
     all_configs = filtertype(AbstractConfig, sim_environment)
-    target_configs = filter(c -> ! isa(c.second, ModeConfig), all_configs)
+    target_configs = filter(c -> c isa AbstractTargetConfig, all_configs)
     modes = collect(values(filtertype(ModeConfig, sim_environment)))
     # NEW signature
     for tconf in values(target_configs)

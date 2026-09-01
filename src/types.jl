@@ -162,34 +162,46 @@ abstract type AbstractState<:NetworkMessage end
 # dynamic configuration of something that the mission wants to look at
 abstract type AbstractTarget<:AbstractState end
 
+abstract type AbstractTargetConfig<:AbstractConfig end
+
 abstract type AbstractConstraint<:NetworkMessage end
 
 # server-side, the table of modes can live in params.
 # But! want a way to construct the mode table via sockets.
-struct ModeConfig<:AbstractConfig
-    id::IDType
-    name::SizedString{SOAP_MAX_STRING_LEN}    # todo: method for reinterpret on .String63 that actually works
+@kwdef mutable struct ModeConfig<:AbstractConfig
+    id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""   # todo: method for reinterpret on .String63 that actually works
     # target_type::DataType
-    target_ids::IDVector{SOAP_MAX_ID_BUCKET}      # lookup TargetConfig by ID.
-    constraint_ids::IDVector{SOAP_MAX_ID_BUCKET}  # lookup <:AbstractConstraint by ID.
-    priority::IDType                # low value => high priority; high value => low priority
-    color::Makie.RGBAf
-    power_consumption::Float64
-    data_production::Float64
-    direction_Body::Vec3d           # body vector to point at the target
+    target_ids::IDVector{SOAP_MAX_ID_BUCKET} = IDVector([])     # lookup TargetConfig by ID.
+    constraint_ids::IDVector{SOAP_MAX_ID_BUCKET} = IDVector([]) # lookup <:AbstractConstraint by ID.
+    priority::IDType = 0xff                # low value => high priority; high value => low priority
+    color::Makie.RGBAf = Makie.RGBAf(0.0, 0, 0, 1)
+    power_consumption::Float64 = 0.0
+    data_production::Float64 = 0.0
+    direction_Body::Vec3d = Vec3d(0.0, 0, 1)           # body vector to point at the target
 end
 
-struct TargetConfig<:AbstractConfig
-    id::IDType
+mutable struct GroundConfig<:AbstractTargetConfig
+    const id::IDType
     name::SizedString{SOAP_MAX_STRING_LEN}
-    dynamic_id::IDType
+    const dynamic_id::IDType
     # color::Makie.RGBAf
     data_consumption::Float64
     position_cone::Float64  # must contain the spacecraft to get the target
     pointing_cone::Float64  # spacecraft sensor must put target inside this cone
 end
 
-struct MagneticFieldConfig<:AbstractConfig
+mutable struct SunConfig<:AbstractTargetConfig
+    const id::IDType
+    name::SizedString{SOAP_MAX_STRING_LEN}
+    const dynamic_id::IDType
+    # color::Makie.RGBAf
+    data_consumption::Float64
+    position_cone::Float64  # must contain the spacecraft to get the target
+    pointing_cone::Float64  # spacecraft sensor must put target inside this cone
+end
+
+mutable struct MagneticFieldConfig<:AbstractTargetConfig
     id::IDType
     name::SizedString{SOAP_MAX_STRING_LEN}
     dynamic_id::IDType
@@ -198,13 +210,13 @@ struct MagneticFieldConfig<:AbstractConfig
 end
 
 # placeholder
-struct EarthConfig<:AbstractConfig
+mutable struct EarthConfig<:AbstractTargetConfig
     id::IDType
     name::SizedString{SOAP_MAX_STRING_LEN}
     dynamic_id::IDType
 end
 
-@kwdef struct SatelliteConfig<:AbstractConfig
+@kwdef mutable struct SatelliteConfig<:AbstractConfig
     id::IDType
     name::SizedString{SOAP_MAX_STRING_LEN}
     dynamic_id::IDType
@@ -234,7 +246,7 @@ function find_config(
     config_lookup::Vector{T},
 ) where {T<:NetworkMessage}
     res = findfirst(
-        p -> p isa AbstractConfig && !(p isa ModeConfig) && p.dynamic_id == state.id,
+        p -> p isa AbstractTargetConfig && p.dynamic_id == state.id,
         config_lookup,
     )
     return config_lookup[res]
@@ -246,10 +258,17 @@ function find_config(
     config_lookup::IDDict{T},
 ) where {T<:NetworkMessage}
     res = config_lookup[findfirst(
-        p -> p isa AbstractConfig && !(p isa ModeConfig) && p.dynamic_id == state.id,
+        p -> p isa AbstractTargetConfig && p.dynamic_id == state.id,
         config_lookup,
     )]
     return res
+end
+
+function find_mode(target::AbstractTarget, config_lookup::IDDict{<:NetworkMessage})
+    return config_lookup[findfirst(
+        p -> p isa ModeConfig && target.id in p.target_ids,
+        config_lookup,
+    )]
 end
 
 function filtertype(T::DataType, sim_environment::IDDict{S}) where {S}
@@ -363,7 +382,7 @@ end
     selected::Bool = false
 end
 
-struct LLAConstraint<:AbstractConstraint
+mutable struct LLAConstraint<:AbstractConstraint
     id::IDType
     name::SizedString{SOAP_MAX_STRING_LEN}
     lat::Point2d
