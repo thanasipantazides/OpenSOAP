@@ -542,9 +542,8 @@ function step_sim!(
     sat = step_satellite(sat, dt, params)
 
     all_configs = filtertype(AbstractConfig, sim_environment)
-    target_configs = filter(c -> c isa AbstractTargetConfig, all_configs)
-    modes = collect(values(filtertype(ModeConfig, sim_environment)))
-    # NEW signature
+    target_configs = filter(c -> c.second isa AbstractTargetConfig, all_configs)
+    # modes = collect(values(filtertype(ModeConfig, sim_environment)))
     for tconf in values(target_configs)
         # extract the target state for this config
         tstate = sim_environment[tconf.dynamic_id]

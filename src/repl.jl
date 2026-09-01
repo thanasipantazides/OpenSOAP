@@ -6,8 +6,7 @@ function launch()
     #   feed the core the config
 
     println("waiting for core to connect...")
-    sock_repl = setup_server(SOAP_HOST, SOAP_REPL_PORT)
-    println("connected!")
+    sock_repl = Threads.@spawn setup_server(SOAP_HOST, SOAP_REPL_PORT)
     return sock_repl
 end
 

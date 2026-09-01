@@ -128,9 +128,7 @@ function run(
         println("< received $type from REPL")
 
         if type <: AbstractConfig || type <: AbstractConstraint || type <: AbstractState
-            lock(sim_env_lock) do
-                sim_environment[field.id] = field
-            end
+            sim_environment[field.id] = field
             println("< changed $(field.id) to: $field")
             if field isa AbstractConfig || field isa AbstractConstraint
                 # forward it to monitor for update. Otherwise, if it is an AbstractState, it will be updated during the integration step.
@@ -139,11 +137,9 @@ function run(
                 println("> core pushed config update to monitor")
             end
         elseif field isa AskMessage
-            lock(sim_env_lock) do
-                if field.message in keys(sim_environment)
-                    resp = packetize(sim_environment[field.message], 0x0003)
-                    write_transport(sock_repl, resp)
-                end
+            if field.message in keys(sim_environment)
+                resp = packetize(sim_environment[field.message], 0x0003)
+                write_transport(sock_repl, resp)
             end
         end
     end
@@ -155,17 +151,15 @@ function run(
             if play[] == 0x01
                 # update all dynamic systems
 
-                lock(sim_env_lock) do
-                    step_sim!(
-                        sat,
-                        sat_config,
-                        sim_environment,
-                        sim.time_step,
-                        time,
-                        params;
-                        exog = perturbation[],
-                    )
-                end
+                step_sim!(
+                    sat,
+                    sat_config,
+                    sim_environment,
+                    sim.time_step,
+                    time,
+                    params;
+                    exog = perturbation[],
+                )
                 # update timestep
                 time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
 

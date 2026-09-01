@@ -264,7 +264,7 @@ function find_config(
     return res
 end
 
-function find_mode(target::AbstractTarget, config_lookup::IDDict{<:NetworkMessage})
+function find_mode(target::AbstractTargetConfig, config_lookup::IDDict{<:NetworkMessage})
     return config_lookup[findfirst(
         p -> p isa ModeConfig && target.id in p.target_ids,
         config_lookup,
