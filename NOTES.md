@@ -14,6 +14,8 @@
     - [ ] Everywhere `modes::Vector{ModeConfig}` appears, replace with `modes::IDDict{ModeConfig}` and update local logic accordingly.
     - [ ] Everywhere `(target_states, target_configs, constraints, modes)` appear together, merge into one `IDDict`. Update local logic to also find based on type, if needed.
       - [x] `io.jl`
+    - [ ] Add a cache object that gets passed around internally in the simulation steps. `cache.sat == sat.id`, `cache.groundstations == filter(p->p.id && p isa GroundState, sim_env)`. And so on.
+- [ ] Make all structs mutable. Use internal `const` fields for IDs.
 
 ### Complex config
 
