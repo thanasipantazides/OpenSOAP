@@ -15,15 +15,6 @@ permissions:
 
 jobs:
   test:
-    # runs-on: ${{ matrix.os }}
-    # strategy:
-    #   matrix:
-    #     julia-version: ['1.12', 'pre']
-    #     julia-arch: [x64, x86]
-    #     os: [ubuntu-latest, windows-latest, macOS-latest]
-    #     exclude:
-    #       - os: macOS-latest
-    #         julia-arch: x86
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -39,6 +30,7 @@ jobs:
 
       - uses: julia-actions/cache@v2
 
+      # the following is copied from the GLMakie repo: https://github.com/MakieOrg/Makie.jl/blob/master/.github/workflows/_glmakie.yml
       - name: setup for GLMakie
         run: |
           sudo apt-get update
@@ -50,13 +42,10 @@ jobs:
       - name: Run the tests
         continue-on-error: true
         run: >
-          DISPLAY=:0 xvfb-run -s '-screen 0 1024x768x24' julia --project=. -e 'using Pkg; Pkg.test("OpenSOAP", coverage=true)'
-            
-      # - uses: GabrielBB/xvfb-action@v1
-      #   with:
-      #     run: julia --project=. -e "using Pkg; Pkg.build(); Pkg.precompile()"
-
-      # - uses: julia-actions/julia-buildpkg@v1
-      # - uses: julia-actions/julia-runtest@v1
-        # with:
-        #   annotate: true
+          DISPLAY=:0 xvfb-run -s '-screen 0 1024x768x24' julia --project=. -e 'using Pkg; Pkg.test("OpenSOAP", coverage=true)' 
+          && echo "TESTS_SUCCESSFUL=true" >> $GITHUB_ENV
+          
+      - name: Fail after artifacts if tests failed
+        if: ${{ env.TESTS_SUCCESSFUL != 'true' }}
+        run: exit 1
+      
