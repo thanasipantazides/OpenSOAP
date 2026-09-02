@@ -1,0 +1,51 @@
+name: Run tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# needed to allow julia-actions/cache to delete old caches that it has created
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ["1.10", "1", "pre"]
+        
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+
+      - uses: julia-actions/cache@v2
+
+      # the following is copied from the GLMakie repo: https://github.com/MakieOrg/Makie.jl/blob/master/.github/workflows/_glmakie.yml
+      - name: setup for GLMakie
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xorg-dev mesa-utils xvfb \
+            libgl1 freeglut3-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxext-dev xsettingsd \
+            x11-xserver-utils
+
+      - name: Run the tests
+        continue-on-error: true
+        run: >
+          DISPLAY=:0 xvfb-run -s '-screen 0 1024x768x24' julia --project=. -e 'using Pkg; Pkg.test("OpenSOAP", coverage=true)' 
+          && echo "TESTS_SUCCESSFUL=true" >> $GITHUB_ENV
+          
+      - name: Fail after artifacts if tests failed
+        if: ${{ env.TESTS_SUCCESSFUL != 'true' }}
+        run: exit 1
+      
