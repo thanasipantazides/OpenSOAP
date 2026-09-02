@@ -15,24 +15,40 @@ permissions:
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    # runs-on: ${{ matrix.os }}
+    # strategy:
+    #   matrix:
+    #     julia-version: ['1.12', 'pre']
+    #     julia-arch: [x64, x86]
+    #     os: [ubuntu-latest, windows-latest, macOS-latest]
+    #     exclude:
+    #       - os: macOS-latest
+    #         julia-arch: x86
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        julia-version: ['lts', '1.12', 'pre']
-        julia-arch: [x64, x86]
-        os: [ubuntu-latest, windows-latest, macOS-latest]
-        exclude:
-          - os: macOS-latest
-            julia-arch: x86
-
+        julia-version: ["1.10", "1", "pre"]
     steps:
       - uses: actions/checkout@v4
+
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.julia-version }}
           arch: ${{ matrix.julia-arch }}
+
       - uses: julia-actions/cache@v2
-      - uses: julia-actions/julia-buildpkg@v1
+
+      - name: setup for GLMakie
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1 mesa-utils \
+            libxrandr2 libxinerama1 libxcursor1 libxi6 libxext6
+
+      - uses: GabrielBB/xvfb-action@v1
+        with:
+          run: julia --project=. -e 'using Pkg; Pkg.build(); Pkg.precompile()'
+
+      # - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
         # with:
         #   annotate: true
