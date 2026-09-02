@@ -1,16 +1,20 @@
 # global const unixsock"tname = "127.0.0.1"
 
 
-function run(; config_path::AbstractString = joinpath("config", "example.jsonc"))
+function run(;
+    config_path::AbstractString = joinpath("config", "example.jsonc"),
+    do_repl = true,
+)
     sim, sat, sat_config, sim_environment = load_config(Dict(load_jsonc(config_path)))
-    return run(sim, sat, sat_config, sim_environment)
+    return run(sim, sat, sat_config, sim_environment; do_repl)
 end
 
 function run(
     sim::SimConfig,
     sat::SatelliteState,
     sat_config::SatelliteConfig,
-    sim_environment::IDDict{<:NetworkMessage},
+    sim_environment::IDDict{<:NetworkMessage};
+    do_repl = true,
 )# config_path::AbstractString = joinpath("config", "example.jsonc"))
 
     # sim, sat, sat_config, targets, target_configs, constraints, modes =
@@ -46,9 +50,11 @@ function run(
     # todo: replace this @show call with something that takes in a full sim_environement dict
     # println((modes, targets, target_configs, constraints))
 
-    println("connecting to REPL...")
-    sock_repl = setup_client(SOAP_HOST, SOAP_REPL_PORT)
-    println("connected!")
+    if do_repl
+        println("connecting to REPL...")
+        sock_repl = setup_client(SOAP_HOST, SOAP_REPL_PORT)
+        println("connected!")
+    end
 
     # udp 
     # sock =
@@ -115,7 +121,7 @@ function run(
     end
 
     # look for updates from REPL
-    Threads.@spawn while do_quit[] != 0x01
+    do_repl && Threads.@spawn while do_quit[] != 0x01
         if !isreadable(sock_repl.sock)
             do_quit[] = 0x01
         end

@@ -122,7 +122,7 @@ Base.@kwdef mutable struct ViewContext
     met::Observable{Float64} = Observable(Float64(0.0))
 
     # - debug text
-    debug_info::Observable{String} = Observable("")
+    debug_info::Observable{Makie.RichText} = Observable(rich("."))
 end
 
 function update_view!(
@@ -570,7 +570,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         ax,
         1,
         0,
-        text = debuginfo,
+        text = view.debug_info,
         align = (:right, :bottom),
         space = :relative,
         fontsize = 10.0,
@@ -661,9 +661,10 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             update_cam!(ax.scene, cam)
         elseif CamState(cam_state[]) == target_focused
             cam.lookat[] = pos[end]
-            cam.eyeposition[] =
-                (pos[end] + normalize(view.target_line_ECI[])) -
-                6371e3*normalize(view.target_line_ECI[])
+            cam.eyeposition[] = (
+                pos[end] -
+                6371e3*(normalize(view.target_line_ECI[][end] - view.target_line_ECI[][1]))
+            )
             update_cam!(ax.scene, cam)
         elseif CamState(cam_state[]) == free
             # no op 
@@ -738,7 +739,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 texturek = mod(texturek, length(textures)) + 1
                 texture[] = load_earth_texture_to_ecef(textures[texturek])
                 notify(texture)
-                # return Consume(true)
+                cmd_label[] = "selected tex $(basename(textures[texturek]))"
+                notify(cmd_label)
             end
             if event.key == Keyboard.l
                 if body_frame_visible[]
@@ -803,7 +805,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 simdata = ret[4]
                 sim_environment[simdata.id] = simdata
                 update_view!(view, sim_environment, simdata)
-                continue
             end
             # elseif type<:AbstractConfig || type<:AbstractConstraint
             #     flags = ret[3]
@@ -990,6 +991,34 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             # notify(gs_labels)
             # notify(gs_col)
 
+            sats = sim_environment[findfirst(p -> p isa SatelliteState, sim_environment)]
+            mode_conf = sim_environment[sats.mode]
+            target_name =
+                sats.target < typemax(IDType) ?
+                string(find_config(sim_environment[sats.target], sim_environment).name) :
+                "---"
+            view.debug_info[] = rich(
+                "mode: ",
+                rich(
+                    String(Printf.@sprintf "%20s" mode_conf.name),
+                    "\n",
+                    color = view.mode_color[],
+                ),
+                "target: ",
+                rich(String(Printf.@sprintf "%20s" string(target_name)), "\n"),
+                "config: ",
+                rich(String(Printf.@sprintf "%20s" configfilename[]), "\n"),
+                "time gain: ",
+                rich(
+                    String(
+                        Printf.@sprintf "%18u:1" Int64(
+                            round((view.met[] - last_met)/(time() - lastratetime)),
+                        )
+                    ),
+                ),
+            )
+            notify(view.debug_info)
+
             bytecount += len + 8
 
             if time() - lastratetime > secondly_debug
@@ -997,6 +1026,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 # Printf.@printf "time gain: %u:1 \n" Int64(
                 #     round((met[] - last_met)/(time() - lastratetime)),
                 # )
+                println("mode: $(mode_conf.name), target: $(target_name)")
                 last_met = view.met[]
                 lastratetime = time()
                 bytecount = 0

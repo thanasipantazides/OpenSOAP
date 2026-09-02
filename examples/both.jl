@@ -10,7 +10,7 @@ println("running with $(nprocs()) workers")
 function main()
     fconfig = joinpath("config", "example.jsonc")
     println("launching core...")
-    fcore = @spawnat workers()[1] OpenSOAP.run(config_path = fconfig)
+    fcore = @spawnat workers()[1] OpenSOAP.run(config_path = fconfig; do_repl = false)
     sleep(3)
     println("launching monitor...")
     fmon = @spawnat workers()[2] OpenSOAP.monitor(config_path = fconfig)
@@ -18,6 +18,9 @@ function main()
     fm = fetch(fcore)
 
     sleep(1)
+
+    @everywhere GC.gc()
+    println("collected.")
 
     return 0
 end
