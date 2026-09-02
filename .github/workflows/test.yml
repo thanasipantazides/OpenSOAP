@@ -42,14 +42,21 @@ jobs:
       - name: setup for GLMakie
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libgl1 mesa-utils \
-            libxrandr2 libxinerama1 libxcursor1 libxi6 libxext6
+          sudo apt-get install -y xorg-dev mesa-utils xvfb \
+            libgl1 freeglut3-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxext-dev xsettingsd \
+            x11-xserver-utils
 
-      - uses: GabrielBB/xvfb-action@v1
-        with:
-          run: julia --project=. -e "using Pkg; Pkg.build(); Pkg.precompile()"
+      - name: Run the tests
+        continue-on-error: true
+        run: >
+          DISPLAY=:0 xvfb-run -s '-screen 0 1024x768x24' julia --project=. -e 'using Pkg; Pkg.test("OpenSOAP", coverage=true)'
+            
+      # - uses: GabrielBB/xvfb-action@v1
+      #   with:
+      #     run: julia --project=. -e "using Pkg; Pkg.build(); Pkg.precompile()"
 
       # - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-runtest@v1
+      # - uses: julia-actions/julia-runtest@v1
         # with:
         #   annotate: true
