@@ -9,7 +9,7 @@ using OpenSOAP
     sim, sat, sat_config, sim_env = load_config(Dict(load_jsonc(testjsonpath)))
 
     target_states = filter(p -> p isa AbstractTarget, sim_env)
-    target_configs = filter(p -> p isa AbstractConfig && !(p isa ModeConfig), sim_env)
+    target_configs = filter(p -> p isa AbstractTargetConfig, sim_env)
     constraints = filter(p -> p isa AbstractConstraint, sim_env)
     modes = filter(p -> p isa ModeConfig, sim_env)
 

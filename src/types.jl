@@ -217,27 +217,27 @@ end
 end
 
 @kwdef mutable struct SatelliteConfig<:AbstractConfig
-    id::IDType
-    name::SizedString{SOAP_MAX_STRING_LEN}
-    dynamic_id::IDType
-    inertia_Body::Mat3d
-    inertia_inv_Body::Mat3d
-    surface_area::Float64       # total surface area
-    angular_rate_max::Float64
-    power_battery_max::Float64
-    data_storage_max::Float64
-    power_solar_panel_efficiency::Float64
-    power_solar_panel_area::Float64
-    power_solar_panel_direction_Body::Vec3d
-    data_antenna_direction_Body::Vec3d
+    id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    dynamic_id::IDType = 0x00
+    inertia_Body::Mat3d = Mat3d(I(3))
+    inertia_inv_Body::Mat3d = Mat3d(I(3))
+    surface_area::Float64 = 0.0      # total surface area
+    angular_rate_max::Float64 = 0.0
+    power_battery_max::Float64 = 0.0
+    data_storage_max::Float64 = 0.0
+    power_solar_panel_efficiency::Float64 = 0.0
+    power_solar_panel_area::Float64 = 0.0
+    power_solar_panel_direction_Body::Vec3d = Vec3d(0.0)
+    data_antenna_direction_Body::Vec3d = Vec3d(0.0)
 end
 
 @kwdef mutable struct SimConfig<:AbstractConfig
-    id::IDType
-    start_time::Dates.DateTime
-    time_step::Float64
-    step_count::UInt64
-    kw::Dict{String,Any}
+    id::IDType = 0x00
+    start_time::Dates.DateTime = Dates.DateTime(2000, 1, 1, 0, 0, 0)
+    time_step::Float64 = 0.0
+    step_count::UInt64 = UInt64(0)
+    kw::Dict{String,Any} = Dict{String,Any}()
 end
 
 # find the config struct for a corresponding dynamic (state) struct by id
@@ -382,12 +382,12 @@ end
     selected::Bool = false
 end
 
-mutable struct LLAConstraint<:AbstractConstraint
-    id::IDType
-    name::SizedString{SOAP_MAX_STRING_LEN}
-    lat::Point2d
-    lon::Point2d
-    alt::Point2d
+@kwdef mutable struct LLAConstraint<:AbstractConstraint
+    id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    lat::Point2d = Point2d(0.0)
+    lon::Point2d = Point2d(0.0)
+    alt::Point2d = Point2d(0.0)
 end
 
 function reference_direction(target::T) where {T<:Union{SunState,GroundState}}
