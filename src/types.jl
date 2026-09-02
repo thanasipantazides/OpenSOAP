@@ -181,39 +181,39 @@ abstract type AbstractConstraint<:NetworkMessage end
     direction_Body::Vec3d = Vec3d(0.0, 0, 1)           # body vector to point at the target
 end
 
-mutable struct GroundConfig<:AbstractTargetConfig
-    const id::IDType
-    name::SizedString{SOAP_MAX_STRING_LEN}
-    const dynamic_id::IDType
+@kwdef mutable struct GroundConfig<:AbstractTargetConfig
+    const id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    const dynamic_id::IDType = 0x00
     # color::Makie.RGBAf
-    data_consumption::Float64
-    position_cone::Float64  # must contain the spacecraft to get the target
-    pointing_cone::Float64  # spacecraft sensor must put target inside this cone
+    data_consumption::Float64 = 0.0
+    position_cone::Float64 = pi/2  # must contain the spacecraft to get the target
+    pointing_cone::Float64 = pi/2  # spacecraft sensor must put target inside this cone
 end
 
-mutable struct SunConfig<:AbstractTargetConfig
-    const id::IDType
-    name::SizedString{SOAP_MAX_STRING_LEN}
-    const dynamic_id::IDType
+@kwdef mutable struct SunConfig<:AbstractTargetConfig
+    const id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    const dynamic_id::IDType = 0x00
     # color::Makie.RGBAf
-    data_consumption::Float64
-    position_cone::Float64  # must contain the spacecraft to get the target
-    pointing_cone::Float64  # spacecraft sensor must put target inside this cone
+    data_consumption::Float64 = 0.0
+    position_cone::Float64 = pi/2  # must contain the spacecraft to get the target
+    pointing_cone::Float64 = pi/2  # spacecraft sensor must put target inside this cone
 end
 
-mutable struct MagneticFieldConfig<:AbstractTargetConfig
-    id::IDType
-    name::SizedString{SOAP_MAX_STRING_LEN}
-    dynamic_id::IDType
-    normalization::UInt8
-    model_order::UInt8
+@kwdef mutable struct MagneticFieldConfig<:AbstractTargetConfig
+    id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    dynamic_id::IDType = 0x00
+    normalization::UInt8 = 1
+    model_order::UInt8 = 2
 end
 
 # placeholder
-mutable struct EarthConfig<:AbstractTargetConfig
-    id::IDType
-    name::SizedString{SOAP_MAX_STRING_LEN}
-    dynamic_id::IDType
+@kwdef mutable struct EarthConfig<:AbstractTargetConfig
+    id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    dynamic_id::IDType = 0x00
 end
 
 @kwdef mutable struct SatelliteConfig<:AbstractConfig

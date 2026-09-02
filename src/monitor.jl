@@ -130,6 +130,7 @@ function update_view!(
     env::IDDict{<:NetworkMessage},
     msg::SatelliteState;
 )#cache=IDCache)
+    env[msg.id] = msg
     # update mission clock
     view.met[] = msg.elapsed_time
     notify(view.met)
@@ -169,6 +170,31 @@ function update_view!(
     view.q_Body_ECI[] = dcm_to_quat(msg.attitude_ECI_Body')
     notify(view.q_Body_ECI)
 
+    view.target_line_ECI[][1] = msg.position_ECI
+    if msg.target in keys(env) && msg.target < typemax(IDType)
+        target = env[msg.target]
+
+        if target isa GroundState
+            view.target_line_ECI[][2] = target.position_ECI
+
+        elseif target isa SunState
+            view.target_line_ECI[][2] =
+                msg.position_ECI +
+                0.33*6371e3*normalize(target.position_ECI - msg.position_ECI)
+
+        elseif target isa MagneticFieldState
+            view.target_line_ECI[][2] =
+                0.33*6371e3*normalize(target.direction_ECI) + msg.position_ECI
+
+        else
+
+        end
+    else
+        view.target_line_ECI[][2] = NaN
+    end
+
+    notify(view.target_line_ECI)
+
     view.mode_color[] = env[msg.mode].color
     notify(view.mode_color)
     view.tail_color[] = [view.mode_color[] for _ in eachindex(view.tail_color[])]
@@ -179,7 +205,9 @@ function update_view!(
     view::ViewContext,
     env::IDDict{<:NetworkMessage},
     msg::SatelliteConfig,
-) end
+)
+    env[msg.id] = msg
+end
 
 function update_view!(view::ViewContext, env::IDDict{<:NetworkMessage}, msg::SunState)
     env[msg.id] = msg
@@ -196,7 +224,9 @@ function update_view!(
     view::ViewContext,
     env::IDDict{<:NetworkMessage},
     msg::MagneticFieldState,
-) end
+)
+    env[msg.id] = msg
+end
 
 function update_view!(view::ViewContext, env::IDDict{<:NetworkMessage}, msg::GroundState)
     # cache this state so later on other state updates can get it
@@ -317,7 +347,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     start_time = sim.start_time
 
     view = ViewContext()
-    # @show view
 
     # pos_ECI = Observable([Point3d(NaN) for k = 1:pointbufflen])
     # ob_time = Observable([start_time + Dates.Second(k) for k = 1:obbufflen])
@@ -964,7 +993,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             bytecount += len + 8
 
             if time() - lastratetime > secondly_debug
-                # Printf.@printf "rate: %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
+                Printf.@printf "rate: %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
                 # Printf.@printf "time gain: %u:1 \n" Int64(
                 #     round((met[] - last_met)/(time() - lastratetime)),
                 # )
