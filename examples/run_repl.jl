@@ -47,10 +47,14 @@ function main()
         end
     end
 
-    # when the core process eventually ends, close the socket.
     Threads.@spawn begin
-        fm = fetch(fcore)
+        fetch(fcore)
         close(connected_sock.sock)
+        sleep(1)
+        # this has proven helpful in really closing sockets which 
+        # may not be fully drained. Allows re-running quickly without
+        # running into TIME_WAIT issues with EADDRINUSE.
+        @everywhere GC.gc()
     end
 
     return connected_sock, sim, sat, sat_config, obs_env
