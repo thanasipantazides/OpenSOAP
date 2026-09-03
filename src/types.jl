@@ -1,3 +1,106 @@
+
+# an isbitstype(IDVector) == true wrapper, to enable good serialization of 
+# lists of IDs (e.g. for ModeConfig.)
+struct IDVector{N} <: AbstractVector{IDType}
+    data::SVector{N,IDType}
+    length::IDType          # not fully generic: IDType is meant for unique 
+    # objects, so only need to store up to typemax(IDType) of them.
+end
+
+Base.size(v::IDVector) = (v.length,)
+Base.getindex(v::IDVector, k) = v.data[k]
+Base.sizeof(v::IDVector{N}) where {N} = N
+
+function IDVector{N}(v::AbstractVector) where {N}
+    if N > SOAP_MAX_ID_BUCKET
+        error("N is too large")
+    end
+    n = length(v)
+    if n > N
+        error("v is too large!")
+    end
+
+    return IDVector{N}(SVector{N}(vcat(v, zeros(IDType, N - n))), n)
+end
+
+function IDVector(v::AbstractVector)
+    if length(v) > SOAP_MAX_ID_BUCKET
+        error("N is too large")
+    end
+    n = length(v)
+
+    return IDVector{SOAP_MAX_ID_BUCKET}(
+        SVector{SOAP_MAX_ID_BUCKET}(vcat(v, zeros(IDType, SOAP_MAX_ID_BUCKET - n))),
+        n,
+    )
+end
+
+# an isbitstype(SizedString) == true wrapper, to enable serialization of strings
+struct SizedString{N} <: AbstractString
+    data::SVector{N,UInt8}
+    length::UInt16
+end
+
+function SizedString{N}(s::AbstractString) where {N}
+    if N > typemax(UInt16)
+        throw(ArgumentError("FixedString{N} requires N <= 65535"))
+    end
+    bytes = codeunits(s)
+    n = length(bytes)
+    if n > N
+        throw(ArgumentError("string $s exceeds FixedString capacity $N"))
+    end
+    padded = ntuple(i -> i <= n ? bytes[i] : 0x00, N)
+    SizedString{N}(padded, UInt8(n))
+end
+
+function SizedString(s::AbstractString)
+    if length(codeunits(s)) > SOAP_MAX_STRING_LEN
+        throw(
+            ArgumentError(
+                "FixedString requires a length (in codeunits) < $SOAP_MAX_STRING_LEN",
+            ),
+        )
+    end
+    bytes = codeunits(s)
+    n = length(bytes)
+    padded = ntuple(i -> i <= n ? bytes[i] : 0x00, SOAP_MAX_STRING_LEN)
+    SizedString{SOAP_MAX_STRING_LEN}(padded, UInt8(n))
+end
+
+# AbstractString interface:
+Base.ncodeunits(s::SizedString) = Int(s.length)
+Base.codeunit(::SizedString) = UInt8
+Base.codeunit(s::SizedString, i::Integer) = s.data[i]
+Base.isvalid(s::SizedString, i::Integer) = isvalid(String(s), i)
+Base.String(s::SizedString) = String(UInt8[s.data[i] for i = 1:s.length])
+
+Base.show(io::IO, s::SizedString) = show(io, String(s))
+Base.:(==)(a::SizedString, b::SizedString) = a.length == b.length && a.data == b.data
+Base.hash(s::SizedString, h::UInt) = hash(s.data, hash(s.length, h))
+
+capacity(::SizedString{N}) where {N} = N
+capacity(::Type{SizedString{N}}) where {N} = N
+
+function Base.iterate(s::SizedString, i::Int = 1)
+    i > s.length && return nothing
+    c, j = iterate(String(s), i)  # delegate UTF-8 decoding to String
+    return c, j
+end
+
+function Base.:(==)(a::SizedString, b::AbstractString)
+    bb = codeunits(b)
+    a.length == length(bb) || return false
+    @inbounds for i = 1:a.length
+        a.data[i] == bb[i] || return false
+    end
+    return true
+end
+
+function GeometryBasics.Mat3d(x::Float64)
+    return Mat3d(fill(x, (3, 3)))
+end
+
 # the "*State" structs should be dynamic. 
 # All static config variables should be stored elsewhere.
 
@@ -16,12 +119,20 @@ An abstract type used for controlling the simulation speed or execution.
 abstract type ControlMessage<:NetworkMessage end
 
 """
+    AskMessage<:ControlMessage
+
+A message used to ask the core simulation for a value.
+"""
+@kwdef mutable struct AskMessage<:ControlMessage
+    message::IDType = 0x00
+end
+"""
     PlayMessage<:ControlMessage
 
 A message used to pause or play the simulation. A value of 0x00 is paused.
 """
-mutable struct PlayMessage<:ControlMessage
-    message::UInt8
+@kwdef mutable struct PlayMessage<:ControlMessage
+    message::UInt8 = 0x00
 end
 
 """
@@ -29,19 +140,19 @@ end
 
 A message used to speed up or slow down the simulation.
 """
-mutable struct RateMessage<:ControlMessage
-    message::UInt8
+@kwdef mutable struct RateMessage<:ControlMessage
+    message::UInt8 = 0x00
 end
 
-mutable struct QuitMessage<:ControlMessage
-    message::UInt8
+@kwdef mutable struct QuitMessage<:ControlMessage
+    message::UInt8 = 0x00
 end
 
-mutable struct PerturbationMessage<:ControlMessage
-    moment_Body::Vec3d
-    moment_duration::UInt32 # number of counter steps to sustain
-    force_ECI::Vec3d
-    force_duration::UInt32 # number of counter steps to sustain
+@kwdef mutable struct PerturbationMessage<:ControlMessage
+    moment_Body::Vec3d = Vec3d(0.0)
+    moment_duration::UInt32 = 0x00 # number of counter steps to sustain
+    force_ECI::Vec3d = Vec3d(0.0)
+    force_duration::UInt32 = 0x00# number of counter steps to sustain
 end
 
 # some static configuration for stuff the mission wants to look at
@@ -51,78 +162,93 @@ abstract type AbstractState<:NetworkMessage end
 # dynamic configuration of something that the mission wants to look at
 abstract type AbstractTarget<:AbstractState end
 
+abstract type AbstractTargetConfig<:AbstractConfig end
+
 abstract type AbstractConstraint<:NetworkMessage end
 
 # server-side, the table of modes can live in params.
 # But! want a way to construct the mode table via sockets.
-struct ModeConfig<:AbstractConfig
-    id::IDType
-    name::InlineStrings.String63    # todo: method for reinterpret on .String63 that actually works
+@kwdef mutable struct ModeConfig<:AbstractConfig
+    id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""   # todo: method for reinterpret on .String63 that actually works
     # target_type::DataType
-    target_ids::Vector{IDType}      # lookup TargetConfig by ID.
-    constraint_ids::Vector{IDType}  # lookup <:AbstractConstraint by ID.
-    priority::IDType                # low value => high priority; high value => low priority
-    color::Makie.RGBAf
-    power_consumption::Float64
-    data_production::Float64
-    direction_Body::Vec3d           # body vector to point at the target
+    target_ids::IDVector{SOAP_MAX_ID_BUCKET} = IDVector([])     # lookup TargetConfig by ID.
+    constraint_ids::IDVector{SOAP_MAX_ID_BUCKET} = IDVector([]) # lookup <:AbstractConstraint by ID.
+    priority::IDType = 0xff                # low value => high priority; high value => low priority
+    color::Makie.RGBAf = Makie.RGBAf(0.0, 0, 0, 1)
+    power_consumption::Float64 = 0.0
+    data_production::Float64 = 0.0
+    direction_Body::Vec3d = Vec3d(0.0, 0, 1)           # body vector to point at the target
 end
 
-struct TargetConfig<:AbstractConfig
-    id::IDType
-    name::InlineStrings.String63
-    dynamic_id::IDType
+@kwdef mutable struct GroundConfig<:AbstractTargetConfig
+    const id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    const dynamic_id::IDType = 0x00
     # color::Makie.RGBAf
-    data_consumption::Float64
-    position_cone::Float64  # must contain the spacecraft to get the target
-    pointing_cone::Float64  # spacecraft sensor must put target inside this cone
+    data_consumption::Float64 = 0.0
+    position_cone::Float64 = pi/2  # must contain the spacecraft to get the target
+    pointing_cone::Float64 = pi/2  # spacecraft sensor must put target inside this cone
 end
 
-struct MagneticFieldConfig<:AbstractConfig
-    id::IDType
-    name::InlineStrings.String63
-    dynamic_id::IDType
-    normalization::UInt8
-    model_order::UInt8
+@kwdef mutable struct SunConfig<:AbstractTargetConfig
+    const id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    const dynamic_id::IDType = 0x00
+    # color::Makie.RGBAf
+    data_consumption::Float64 = 0.0
+    position_cone::Float64 = pi/2  # must contain the spacecraft to get the target
+    pointing_cone::Float64 = pi/2  # spacecraft sensor must put target inside this cone
+end
+
+@kwdef mutable struct MagneticFieldConfig<:AbstractTargetConfig
+    id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    dynamic_id::IDType = 0x00
+    normalization::UInt8 = 1
+    model_order::UInt8 = 2
 end
 
 # placeholder
-struct EarthConfig<:AbstractConfig
-    id::IDType
-    name::InlineStrings.String63
-    dynamic_id::IDType
+@kwdef mutable struct EarthConfig<:AbstractTargetConfig
+    id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    dynamic_id::IDType = 0x00
 end
 
-@kwdef struct SatelliteConfig<:AbstractConfig
-    id::IDType
-    name::InlineStrings.String63
-    dynamic_id::IDType
-    inertia_Body::Mat3d
-    inertia_inv_Body::Mat3d
-    surface_area::Float64       # total surface area
-    angular_rate_max::Float64
-    power_battery_max::Float64
-    data_storage_max::Float64
-    power_solar_panel_efficiency::Float64
-    power_solar_panel_area::Float64
-    power_solar_panel_direction_Body::Vec3d
-    data_antenna_direction_Body::Vec3d
+@kwdef mutable struct SatelliteConfig<:AbstractConfig
+    id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    dynamic_id::IDType = 0x00
+    inertia_Body::Mat3d = Mat3d(I(3))
+    inertia_inv_Body::Mat3d = Mat3d(I(3))
+    surface_area::Float64 = 0.0      # total surface area
+    angular_rate_max::Float64 = 0.0
+    power_battery_max::Float64 = 0.0
+    data_storage_max::Float64 = 0.0
+    power_solar_panel_efficiency::Float64 = 0.0
+    power_solar_panel_area::Float64 = 0.0
+    power_solar_panel_direction_Body::Vec3d = Vec3d(0.0)
+    data_antenna_direction_Body::Vec3d = Vec3d(0.0)
 end
 
 @kwdef mutable struct SimConfig<:AbstractConfig
-    id::IDType
-    start_time::Dates.DateTime
-    time_step::Float64
-    step_count::UInt64
-    kw::Dict{String,Any}
+    id::IDType = 0x00
+    start_time::Dates.DateTime = Dates.DateTime(2000, 1, 1, 0, 0, 0)
+    time_step::Float64 = 0.0
+    step_count::UInt64 = UInt64(0)
+    kw::Dict{String,Any} = Dict{String,Any}()
 end
 
 # find the config struct for a corresponding dynamic (state) struct by id
 function find_config(
     state::AbstractState,
     config_lookup::Vector{T},
-) where {T<:AbstractConfig}
-    res = findfirst(p -> p.dynamic_id == state.id, config_lookup)
+) where {T<:NetworkMessage}
+    res = findfirst(
+        p -> p isa AbstractTargetConfig && p.dynamic_id == state.id,
+        config_lookup,
+    )
     return config_lookup[res]
 end
 
@@ -130,21 +256,35 @@ end
 function find_config(
     state::AbstractState,
     config_lookup::IDDict{T},
-) where {T<:AbstractConfig}
-    res = config_lookup[findfirst(p -> p.dynamic_id == state.id, config_lookup)]
+) where {T<:NetworkMessage}
+    res = config_lookup[findfirst(
+        p -> p isa AbstractTargetConfig && p.dynamic_id == state.id,
+        config_lookup,
+    )]
     return res
 end
 
-mutable struct PositionState<:AbstractState
-    elapsed_time::Float64
-    position_ECI::Point3d
-    velocity_ECI::Point3d
+function find_mode(target::AbstractTargetConfig, config_lookup::IDDict{<:NetworkMessage})
+    return config_lookup[findfirst(
+        p -> p isa ModeConfig && target.id in p.target_ids,
+        config_lookup,
+    )]
 end
 
-mutable struct AttitudeState<:AbstractState
-    elapsed_time::Float64
-    angular_velocity_ECI_Body::Vec3d
-    attitude_ECI_Body::Mat3d
+function filtertype(T::DataType, sim_environment::IDDict{S}) where {S}
+    return filter(s -> typeof(s.second) <: T, sim_environment)
+end
+
+@kwdef mutable struct PositionState<:AbstractState
+    elapsed_time::Float64 = 0.0
+    position_ECI::Point3d = Point3d(0.0)
+    velocity_ECI::Point3d = Point3d(0.0)
+end
+
+@kwdef mutable struct AttitudeState<:AbstractState
+    elapsed_time::Float64 = 0.0
+    angular_velocity_ECI_Body::Vec3d = Vec3d(0.0)
+    attitude_ECI_Body::Mat3d = Mat3d(I(3))
 end
 
 # note: with separate Pos and Att states, 
@@ -206,48 +346,48 @@ SatelliteState() = SatelliteState(
     0x00,
 )
 
-mutable struct EarthState<:AbstractTarget
-    id::IDType
-    elapsed_time::Float64
-    attitude_ECI_ECEF::Mat3d
+@kwdef mutable struct EarthState<:AbstractTarget
+    id::IDType = 0x00
+    elapsed_time::Float64 = 0.0
+    attitude_ECI_ECEF::Mat3d = Mat3d(I(3))
 end
 
-mutable struct SunState<:AbstractTarget
-    const id::IDType
-    elapsed_time::Float64
-    priority::UInt16 # todo: make this a Mode priority, not Target priority.
-    position_ECI::Point3d
-    visible::Bool
-    selected::Bool
+@kwdef mutable struct SunState<:AbstractTarget
+    const id::IDType = 0x00
+    elapsed_time::Float64 = 0.0
+    priority::UInt16 = 0x00# todo: make this a Mode priority, not Target priority.
+    position_ECI::Point3d = Point3d(0.0)
+    visible::Bool = false
+    selected::Bool = false
 end
 
-mutable struct GroundState<:AbstractTarget
-    const id::IDType
-    elapsed_time::Float64
+@kwdef mutable struct GroundState<:AbstractTarget
+    const id::IDType = 0x00
+    elapsed_time::Float64 = 0.0
 
-    priority::UInt16 # todo: make this a Mode priority, not Target priority.
-    const position_LLA::Point3d
-    position_ECI::Point3d
-    visible::Bool
-    selected::Bool
+    priority::UInt16 = 0x00 # todo: make this a Mode priority, not Target priority.
+    position_LLA::Point3d = Point3d(0.0)
+    position_ECI::Point3d = Point3d(0.0)
+    visible::Bool = false
+    selected::Bool = false
 end
 
-mutable struct MagneticFieldState<:AbstractTarget
-    const id::IDType
-    elapsed_time::Float64
+@kwdef mutable struct MagneticFieldState<:AbstractTarget
+    const id::IDType = 0x00
+    elapsed_time::Float64 = 0.0
 
-    direction_ECI::Vec3d
-    visible::Bool
-    available::Bool
-    selected::Bool
+    direction_ECI::Vec3d = Vec3d(0.0)
+    visible::Bool = false
+    available::Bool = false
+    selected::Bool = false
 end
 
-struct LLAConstraint<:AbstractConstraint
-    id::IDType
-    name::InlineStrings.String63
-    lat::Point2d
-    lon::Point2d
-    alt::Point2d
+@kwdef mutable struct LLAConstraint<:AbstractConstraint
+    id::IDType = 0x00
+    name::SizedString{SOAP_MAX_STRING_LEN} = ""
+    lat::Point2d = Point2d(0.0)
+    lon::Point2d = Point2d(0.0)
+    alt::Point2d = Point2d(0.0)
 end
 
 function reference_direction(target::T) where {T<:Union{SunState,GroundState}}
@@ -290,6 +430,17 @@ function *(c::Real, a::AttitudeState)
     return AttitudeState(a.elapsed_time, c*a.angular_velocity_ECI_Body, a.attitude_ECI_Body)
 end
 
+"""
+    mut_struct_eq(ls, rs)::Bool
+
+check for equality of all fields of mutable structs. 
+
+Note that for two mutable structs T and S, T == S is always false.
+"""
+function mut_struct_eq(ls, rs)::Bool
+    return all(getproperty(ls, f) == getproperty(rs, f) for f in propertynames(ls))
+end
+
 function lookup_igrf_normalization(value::AbstractString)::UInt8
     d = Dict{String,UInt8}("none" => 0x00, "nadir" => 0x01, "zenith" => 0x02)
     if value in keys(d)
@@ -318,15 +469,15 @@ function Base.show(io::IO, confs::Vector{<:AbstractConfig})
 
     els = fill("", (length(confs), 3))
     for (k, c) in enumerate(confs)
-        els[k, 1]="$(c.name)"
-        els[k, 2]="$(string(c.id, base=16, pad=4))"
-        els[k, 3]="-> $(string(c.dynamic_id, base=16, pad=4))"
+        els[k, 1] = "$(c.name)"
+        els[k, 2] = "$(string(c.id, base=16, pad=4))"
+        els[k, 3] = c isa ModeConfig ? "" : "-> $(string(c.dynamic_id, base=16, pad=4))"
     end
     PrettyTables.pretty_table(
         io,
         els;
         title = "Target configurations",
-        column_labels = ["Conf. ID", "Name", "Dyn. ID"],
+        column_labels = ["Name", "Conf. ID", "Dyn. ID"],
         backend = :text,
         table_format = fmt,
     )
@@ -337,10 +488,11 @@ function Base.show(io::IO, confs::IDDict{<:AbstractConfig})
         PrettyTables.TextTableFormat(borders = PrettyTables.text_table_borders__borderless)
 
     els = fill("", (length(confs), 3))
-    for (k, c) in enumerate(collect(values(confs)))
-        els[k, 1]="$(c.name)"
-        els[k, 2]="$(string(c.id, base=16, pad=4))"
-        els[k, 3]="-> $(string(c.dynamic_id, base=16, pad=4))"
+    for (k, c) in enumerate(collect(keys(confs)))
+        els[k, 1] = "$(confs[c].name)"
+        els[k, 2] = "$(string(confs[c].id, base=16, pad=4))"
+        els[k, 3] =
+            c isa ModeConfig ? "" : "-> $(string(confs[c].dynamic_id, base=16, pad=4))"
     end
     PrettyTables.pretty_table(
         io,

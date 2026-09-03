@@ -63,7 +63,7 @@ end
 
 function lookup_target_config(
     name::AbstractString,
-    target_configs::Vector{TargetConfig},
+    target_configs::Vector{<:AbstractTargetConfig},
 )::Union{Nothing,IDType}
     res = findfirst(t -> t.name==name, target_configs)
     if isnothing(res)
@@ -111,9 +111,9 @@ function make_mode(
 
     m = ModeConfig(
         next_id!(id_registry),
-        InlineStrings.String63(mode_name),
-        tconfig_ids,
-        constraint_ids,
+        SizedString{SOAP_MAX_STRING_LEN}(mode_name),
+        IDVector(tconfig_ids),
+        IDVector(constraint_ids),
         mode["priority"],
         Makie.RGBAf(mode["color"] ./ 255 ...),
         mode["power_consumption"],
@@ -240,7 +240,7 @@ function next_id!(id_set::Set{IDType})
 end
 
 function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
-    name = InlineStrings.InlineString63(json["name"])
+    name = SizedString{SOAP_MAX_STRING_LEN}(json["name"])
     data_source = json["direction"]["source"]
     target_type = lookup_target(data_source)
     if target_type === SunState
@@ -253,7 +253,7 @@ function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
             false,
         )
 
-        config = TargetConfig(next_id!(id_registry), json["name"], state.id, 0.0, pi, pi/2)
+        config = SunConfig(next_id!(id_registry), json["name"], state.id, 0.0, pi, pi/2)
         return (state, config)
 
     elseif target_type === EarthState
@@ -272,23 +272,26 @@ function make_target(json, start_time::Dates.DateTime, id_registry::Set{IDType})
         return (state, config)
 
     elseif target_type === GroundState
+        pos_lla = Vec3d(
+            pi/180*(json["direction"]["value"][1:2])...,
+            json["direction"]["value"][3],
+        )
+
         state = GroundState(
             next_id!(id_registry),
             0.0,
             2,
-            pi/180*Point3d(json["direction"]["value"]...),
+            pos_lla,
             SatelliteToolboxTransformations.r_ecef_to_eci(
                 SatelliteToolboxTransformations.ITRF(),
                 SatelliteToolboxTransformations.J2000(),
                 SatelliteToolboxBase.date_to_jd(start_time),
                 eop,
-            )*SatelliteToolboxTransformations.geodetic_to_ecef(
-                pi/180*Point3d(json["direction"]["value"]...),
-            ),
+            )*SatelliteToolboxTransformations.geodetic_to_ecef(pos_lla),
             false,
             false,
         )
-        config = TargetConfig(
+        config = GroundConfig(
             next_id!(id_registry),
             json["name"],
             state.id,
@@ -378,7 +381,7 @@ end
 function lookup_target_state(
     name::AbstractString,
     target_states::Vector{Union{Nothing,AbstractTarget}},
-    target_configs::Vector{TargetConfig},
+    target_configs::Vector{<:AbstractTargetConfig},
 )
     # compare the `name` to the .name value in target config, return the state that matches.
 
@@ -564,43 +567,34 @@ function load_config(d::Dict{String,Any})
     sat.mode = values(modes)[1].id
     sat.target = [values(target_states)...][1].id
 
-    check_ids(
-        sat,
-        sat_config,
-        target_states::IDDict{<:AbstractState},
-        target_configs::IDDict{<:AbstractConfig},
-        constraints::IDDict{<:AbstractConstraint},
-        modes,
-    )
+    sim_environment = merge(target_states, target_configs, constraints, IDDict(modes))
 
-    return (sim, sat, sat_config, target_states, target_configs, constraints, modes)
+    check_ids(sat, sat_config, sim_environment)
+
+    return (sim, sat, sat_config, sim_environment)
 end
 
-function check_ids(
-    sat,
-    sat_config,
-    target_states::IDDict{<:AbstractState},
-    target_configs::IDDict{<:AbstractConfig},
-    constraints::IDDict{<:AbstractConstraint},
-    modes,
-)
+function check_ids(sat, sat_config, sim_environment::IDDict{<:NetworkMessage})
     good = true
     good = good && sat_config.dynamic_id == sat.id
-    for (k, v) in target_configs
+    for (k, v) in sim_environment
         # self-consistency
         good = good && k == v.id
         # reference check
-        good = good && v.dynamic_id in keys(target_states)
+        if typeof(sim_environment[k]) <: AbstractConfig &&
+           !isa(sim_environment[k], ModeConfig)
+            good = good && v.dynamic_id in keys(sim_environment)
+        end
     end
 
-    for mode in modes
-        for tc in mode.target_ids
-            good = good && tc in keys(target_configs)
-        end
-        for c in mode.constraint_ids
-            good = good && c in keys(constraints)
-        end
-    end
+    # for mode in modes
+    #     for tc in mode.target_ids
+    #         good = good && tc in keys(target_configs)
+    #     end
+    #     for c in mode.constraint_ids
+    #         good = good && c in keys(constraints)
+    #     end
+    # end
     return good
 end
 

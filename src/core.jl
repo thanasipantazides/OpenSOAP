@@ -1,9 +1,24 @@
 # global const unixsock"tname = "127.0.0.1"
 
-function run(; config_path::AbstractString = joinpath("config", "example.jsonc"))
 
-    sim, sat, sat_config, targets, target_configs, constraints, modes =
-        load_config(Dict(load_jsonc(config_path)))
+function run(;
+    config_path::AbstractString = joinpath("config", "example.jsonc"),
+    do_repl = true,
+)
+    sim, sat, sat_config, sim_environment = load_config(Dict(load_jsonc(config_path)))
+    return run(sim, sat, sat_config, sim_environment; do_repl)
+end
+
+function run(
+    sim::SimConfig,
+    sat::SatelliteState,
+    sat_config::SatelliteConfig,
+    sim_environment::IDDict{<:NetworkMessage};
+    do_repl = true,
+)# config_path::AbstractString = joinpath("config", "example.jsonc"))
+
+    # sim, sat, sat_config, targets, target_configs, constraints, modes =
+    #     load_config(Dict(load_jsonc(config_path)))
 
     # return targets, target_configs
 
@@ -28,20 +43,32 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
         "do_J2" => true,
     )
 
+    target_states = filter(s -> typeof(s.second) <: AbstractState, sim_environment)
+    target_configs = filter(s -> typeof(s.second) <: AbstractConfig, sim_environment)
     println(collect(values(target_configs)))
 
-    println((modes, targets, target_configs, constraints))
+    # todo: replace this @show call with something that takes in a full sim_environement dict
+    # println((modes, targets, target_configs, constraints))
+
+    if do_repl
+        println("connecting to REPL...")
+        sock_repl = setup_client(SOAP_HOST, SOAP_REPL_PORT)
+        println("connected!")
+    end
 
     # udp 
     # sock =
     #     setup_server(SOAP_HOST, SOAP_CORE_PORT, SOAP_HOST, SOAP_MON_PORT)
 
     # tcp 
-    sock = setup_server(SOAP_HOST, SOAP_CORE_PORT)
-    println("connected.")
+    println("waiting for monitor connection...")
+    sock_mon = setup_server(SOAP_HOST, SOAP_CORE_PORT)
+    println("connected!")
 
     # unix
     # sock = setup_server(SOAP_UNIX_SOCK)
+
+    sim_env_lock = ReentrantLock()
 
     play = Ref(UInt8(0x01))
     do_quit = Ref(UInt8(0x00))
@@ -58,20 +85,22 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
     # todo: factor this out of the run() function.
 
 
-    @async while do_quit[] != 0x01
-        if !isreadable(sock.sock)
+    Threads.@spawn while do_quit[] != 0x01
+        if !isreadable(sock_mon.sock)
             do_quit[] = 0x01
         end
 
-        ret = read_transport(sock)
+        ret = read_transport(sock_mon)
         type = ret[1]
         cmd = nothing
         len = 0
         flags = nothing
         if type<:ControlMessage
-            flags = ret[2]
-            len = ret[3]
+            len = ret[2]
+            flags = ret[3]
             cmd = ret[4]
+        else
+            continue
         end
 
         if type === PlayMessage
@@ -91,37 +120,66 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
         end
     end
 
+    # look for updates from REPL
+    do_repl && Threads.@spawn while do_quit[] != 0x01
+        if !isreadable(sock_repl.sock)
+            do_quit[] = 0x01
+        end
+
+        ret = read_transport(sock_repl)
+        type = ret[1]
+        len = ret[2]
+        flags = ret[3]
+        field = ret[4]
+        println("< received $type from REPL")
+
+        if type <: AbstractConfig || type <: AbstractConstraint || type <: AbstractState
+            sim_environment[field.id] = field
+            println("< changed $(field.id) to: $field")
+            if field isa AbstractConfig || field isa AbstractConstraint
+                # forward it to monitor for update. Otherwise, if it is an AbstractState, it will be updated during the integration step.
+                newval = packetize(field, 0x0002)
+                write_transport(sock_mon, newval)
+                println("> core pushed config update to monitor")
+            end
+        elseif field isa AskMessage
+            if field.message in keys(sim_environment)
+                resp = packetize(sim_environment[field.message], 0x0003)
+                write_transport(sock_repl, resp)
+            end
+        end
+    end
+
     time = sim.start_time
 
     while do_quit[] != 0x01 #isopen(sock)
         try
             if play[] == 0x01
                 # update all dynamic systems
+
                 step_sim!(
                     sat,
                     sat_config,
-                    targets,
-                    target_configs,
-                    constraints,
-                    modes,
+                    sim_environment,
                     sim.time_step,
                     time,
                     params;
                     exog = perturbation[],
                 )
-
                 # update timestep
                 time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
 
                 # serialize and send data
-                sat_data = packetize(sat, 0x0000, sim.step_count)
-                write_transport(sock, sat_data)
+                sat_data = packetize(sat, 0x0000)
+                write_transport(sock_mon, sat_data)
 
                 # don't need to update Earth/Sun/etc positions as often as spacecraft state---save bandwidth.
                 if sim.step_count % send_targets_per_sat_update == 0
-                    for target in values(targets)
-                        t_data = packetize(target, 0x0000, sim.step_count)
-                        write_transport(sock, t_data)
+                    for k in keys(sim_environment)
+                        if sim_environment[k] isa AbstractTarget
+                            t_data = packetize(sim_environment[k], 0x0000)
+                            write_transport(sock_mon, t_data)
+                        end
                     end
                 end
 
@@ -148,7 +206,7 @@ function run(; config_path::AbstractString = joinpath("config", "example.jsonc")
         catch e
             if typeof(e) <: InterruptException
                 println("exiting...")
-                close(sock.sock)
+                close(sock_mon.sock)
                 return -1
             else
                 rethrow(e)
@@ -164,8 +222,7 @@ end
 # same as run(), but no socket communication. For testing.
 function run_free(; config_path::AbstractString = joinpath("config", "example.jsonc"))
 
-    sim, sat, sat_config, targets, target_configs, constraints, modes =
-        load_config(Dict(load_jsonc(config_path)))
+    sim, sat, sat_config, sim_environment = load_config(Dict(load_jsonc(config_path)))
 
     inertia_B = diagm([5, 10, 13])*1e-2
 
@@ -193,6 +250,8 @@ function run_free(; config_path::AbstractString = joinpath("config", "example.js
         ),
     )
 
+    targets = filter(c -> c.second isa AbstractTarget, sim_environment)
+
     packlen = 1
 
     time = sim.start_time
@@ -200,26 +259,16 @@ function run_free(; config_path::AbstractString = joinpath("config", "example.js
     # run simulation
     while true
         # update all dynamic systems
-        step_sim!(
-            sat,
-            sat_config,
-            targets,
-            target_configs,
-            constraints,
-            modes,
-            sim.time_step,
-            time,
-            params;
-        )
+        step_sim!(sat, sat_config, sim_environment, sim.time_step, time, params;)
         # update timestep
         time = sim.start_time + Dates.Millisecond(1000*sat.elapsed_time)
 
         # serialize data
-        sat_data = packetize(sat, 0x0000, sim.step_count)
-        earth_data = packetize(earth_state, 0x0000, sim.step_count)
+        sat_data = packetize(sat, 0x0000)
+        earth_data = packetize(earth_state, 0x0000)
 
         for target in values(targets)
-            t_data = packetize(target, 0x0000, sim.step_count)
+            t_data = packetize(target, 0x0000)
         end
 
 

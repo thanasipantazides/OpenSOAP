@@ -146,7 +146,6 @@ function step!(
     earth_config::EarthConfig,
     sat::SatelliteState,
     sat_config::SatelliteConfig,
-    modes::Vector{ModeConfig},
     dt::Float64,
     t::Dates.DateTime,
     params,
@@ -162,25 +161,23 @@ end
 
 function step!(
     sun::SunState,
-    sun_config::TargetConfig,
+    sun_config::SunConfig,
     sat::SatelliteState,
     sat_config::SatelliteConfig,
-    modes::Vector{ModeConfig},
     dt::Float64,
     t::Dates.DateTime,
     params,
 )
     sun.elapsed_time += dt
     sun.position_ECI = SatelliteToolboxCelestialBodies.sun_position_mod(t)
-    set_visibility!(sun, sun_config, sat, sat_config, t, modes)
+    set_visibility!(sun, sun_config, sat, sat_config, t)
 end
 
 function step!(
     gs::GroundState,
-    gs_config::TargetConfig,
+    gs_config::GroundConfig,
     sat::SatelliteState,
     sat_config::SatelliteConfig,
-    modes::Vector{ModeConfig},
     dt::Float64,
     t::Dates.DateTime,
     params,
@@ -193,7 +190,7 @@ function step!(
             SatelliteToolboxBase.date_to_jd(t),
             eop,
         )*SatelliteToolboxTransformations.geodetic_to_ecef(gs.position_LLA...)
-    set_visibility!(gs, gs_config, sat, sat_config, t, modes)
+    set_visibility!(gs, gs_config, sat, sat_config, t)
 end
 
 function step!(
@@ -201,7 +198,6 @@ function step!(
     mag_config::MagneticFieldConfig,
     sat::SatelliteState,
     sat_config::SatelliteConfig,
-    modes::Vector{ModeConfig},
     dt::Float64,
     t::Dates.DateTime,
     params,
@@ -245,7 +241,7 @@ function step!(
     end
 
     mag.direction_ECI = field_ECI
-    set_visibility!(mag, mag_config, sat, sat_config, t, modes)
+    set_visibility!(mag, mag_config, sat, sat_config, t)
 end
 
 function density_perturbations(
@@ -400,15 +396,15 @@ end
 function set_mode!(
     sat::SatelliteState,
     sat_config::SatelliteConfig,
-    target_states::IDDict{<:AbstractTarget},
-    target_configs::IDDict{<:AbstractConfig},
-    constraints::IDDict{<:AbstractConstraint},
-    modes::Vector{ModeConfig},
+    sim_environment::IDDict{<:NetworkMessage},
     dt::Float64,
     t::Dates.DateTime,
     params;
     exog::Union{Nothing,PerturbationMessage} = nothing,
 )
+    modes = filter(c -> c.second isa ModeConfig, sim_environment) |> values |> collect
+    constraints = filter(c -> c.second isa AbstractConstraint, sim_environment)
+    target_configs = filter(c -> c.second isa AbstractTargetConfig, sim_environment)
 
     visible_mode_ids = Set{IDType}()
     allowed_modes = ModeConfig[]
@@ -416,7 +412,7 @@ function set_mode!(
         # list all the visible targets for this mode
         for tc in mode.target_ids
             # if *any* of these are visible, can do the mode.
-            if target_states[target_configs[tc].dynamic_id].visible
+            if sim_environment[target_configs[tc].dynamic_id].visible
                 push!(visible_mode_ids, mode.id)
             end
         end
@@ -453,10 +449,10 @@ function set_mode!(
         # find the target actually used for this mode, so we can point at it:
         for tc in modechoice.target_ids
             # if any of these are visible, can do the mode. This is finding the first.
-            if target_states[target_configs[tc].dynamic_id].visible
+            if sim_environment[target_configs[tc].dynamic_id].visible
                 # note: if constraints/targets usage changes such that constraints depend on targets, this logic will need to be revised.
                 sat.target = target_configs[tc].dynamic_id
-                targetchoice = target_states[sat.target]
+                targetchoice = sim_environment[sat.target]
                 break
             end
         end
@@ -471,7 +467,7 @@ function set_mode!(
         params;
         exog = exog,
     )
-    set_power_data!(sat, sat_config, target_states, target_configs, modes, dt, t, params)
+    set_power_data!(sat, sat_config, sim_environment, dt, t, params)
 end
 
 
@@ -479,23 +475,21 @@ end
 function set_power_data!(
     sat::SatelliteState,
     sat_config::SatelliteConfig,
-    target_states::IDDict{<:AbstractTarget},
-    target_configs::IDDict{<:AbstractConfig},
-    modes::Vector{ModeConfig},
+    sim_environment::IDDict{<:NetworkMessage},
     dt::Float64,
     t::Dates.DateTime,
     params,
 )
-    sun = nothing
-    for ts in values(target_states)
-        if isa(ts, SunState)
-            sun = ts
-        end
-    end
-    # sun = findfirst(x -> isa(x, SunState), values(target_states)...)
+    # find the sun:
+
+    sun = sim_environment[findfirst(c -> c isa SunState, sim_environment)]
+    target_states = filter(c -> typeof(c.second) <: AbstractState, sim_environment)
+
     # todo: add arg modes::Dict{IDType, ModeConfig} to use for lookup.
-    mode_conf = filter(m -> m.id == sat.mode, modes)[1]
-    # mode_conf = params["modes"][sat.mode] 
+    mode_conf = sim_environment[findfirst(
+        m -> (m isa ModeConfig) && m.id == sat.mode,
+        sim_environment,
+    )]
     power_out = mode_conf.power_consumption
     data_in = mode_conf.data_production
     sun_cos =
@@ -509,10 +503,11 @@ function set_power_data!(
             sun_cos,
         )
 
+
     data_out = 0.0
     if sat.target != typemax(IDType)
         if isa(target_states[sat.target], GroundState)
-            conf = find_config(target_states[sat.target], target_configs)
+            conf = find_config(target_states[sat.target], sim_environment)
             data_out = conf.data_consumption
         end
     end
@@ -536,10 +531,7 @@ end
 function step_sim!(
     sat::SatelliteState,
     sat_config::SatelliteConfig,
-    target_states::IDDict{<:AbstractState},
-    target_configs::IDDict{<:AbstractConfig},
-    constraints::IDDict{<:AbstractConstraint},
-    modes::Vector{ModeConfig},
+    sim_environment::IDDict{<:NetworkMessage},
     dt::Float64,
     time::Dates.DateTime,
     params;
@@ -548,23 +540,21 @@ function step_sim!(
     # todo: rename this to "step_orbit" or something consistent. 
     # Most of the SatelliteState doesn't change until set_mode later on.
     sat = step_satellite(sat, dt, params)
-    # NEW signature
+
+    all_configs = filtertype(AbstractConfig, sim_environment)
+    target_configs = filter(c -> c.second isa AbstractTargetConfig, all_configs)
+    # modes = collect(values(filtertype(ModeConfig, sim_environment)))
     for tconf in values(target_configs)
         # extract the target state for this config
-        tstate = target_states[tconf.dynamic_id]
-        step!(tstate, tconf, sat, sat_config, modes, dt, time, params)
+        tstate = sim_environment[tconf.dynamic_id]
+
+        # note: can remove `modes` argument from the step! method without issue, it is not needed down the chain.
+        step!(tstate, tconf, sat, sat_config, dt, time, params)
     end
 
-    set_mode!(
-        sat,
-        sat_config,
-        target_states,
-        target_configs,
-        constraints,
-        modes,
-        dt,
-        time,
-        params;
-        exog = exog,
-    )
+    target_states = filtertype(AbstractTarget, sim_environment)
+    constraints = filtertype(AbstractConstraint, sim_environment)
+
+
+    set_mode!(sat, sat_config, sim_environment, dt, time, params; exog = exog)
 end

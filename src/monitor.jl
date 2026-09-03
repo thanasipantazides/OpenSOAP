@@ -68,6 +68,231 @@ function get_maps()
     return maps
 end
 
+const trail_bufflen = 10^3
+const plot_bufflen = 2*10^4
+
+# a struct to hold all Observables which:
+#   1. are plotted by Makie
+#   2. are affected by the simulation stream.
+# there are some additional Observables for e.g. camera control,
+# those are handled elsewhere.
+Base.@kwdef mutable struct ViewContext
+    # 2D plot pane 
+    time_plot::Observable{Vector{Dates.DateTime}} = Observable([
+        Dates.DateTime(2026, 1, 1, 0, 0, 0)+Dates.Second(k) for k = 1:plot_bufflen
+    ])
+    batt_plotable::Observable{Vector{Float64}} = Observable(fill(NaN, plot_bufflen))
+    stor_plotable::Observable{Vector{Float64}} = Observable(fill(NaN, plot_bufflen))
+    power_plotable::Observable{Vector{Float64}} = Observable(fill(NaN, plot_bufflen))
+    data_plotable::Observable{Vector{Float64}} = Observable(fill(NaN, plot_bufflen))
+    extra_plotable::Observable{Vector{Float64}} = Observable(fill(NaN, plot_bufflen))
+
+    # 3D view items:
+
+    # - trajectory history
+    sat_trajectory_ECI::Observable{Vector{Vec3d}} =
+        Observable([Vec3d(NaN) for _ = 1:trail_bufflen])
+    tail_color::Observable{Vector{Makie.RGBAf}} =
+        Observable([Makie.RGBAf(0.0, 0.0, 0.0, 0.0) for _ = 1:trail_bufflen])
+
+    # - target items
+    target_line_ECI::Observable{Vector{Vec3d}} = Observable([Vec3d(NaN) for _ = 1:2])
+    target_rel_ECI::Observable{Vec3d} = Observable(Vec3d(NaN))
+    sun_pos_ECI::Observable{Vec3d} = Observable(Vec3d(1.0, 0, 0))
+    mode_color::Observable{Makie.RGBAf} = Observable(Makie.RGBAf(0.0, 0, 0, 0.0))
+
+    gs_count::UInt64 = 0
+    gs_positions_ECI::Observable{Vector{Vec3d}} = Observable([Vec3d(NaN)])
+    gs_label_positions_ECI::Observable{Vector{Vec3d}} = Observable([Vec3d(NaN)])
+    gs_labels::Observable{Vector{String}} = Observable(["."])
+    gs_colors::Observable{Vector{Makie.RGBAf}} =
+        Observable([Makie.RGBAf(0.0, 0.0, 0.0, 0.0)])
+
+    # - dynamics
+    moment_ECI::Observable{Vector{Vec3d}} = Observable([Vec3d(NaN) for _ = 1:2])
+    angular_velocity_ECI::Observable{Vector{Vec3d}} = Observable([Vec3d(NaN) for _ = 1:2])
+
+    # - attitude
+    q_ECEF_ECI::Observable{Makie.Quaternion{Float64}} =
+        Observable(Makie.Quaternion(0.0, 0, 0, 1))
+    q_Body_ECI::Observable{Makie.Quaternion{Float64}} =
+        Observable(Makie.Quaternion(0.0, 0, 0, 1))
+
+    # - time
+    met::Observable{Float64} = Observable(Float64(0.0))
+
+    # - debug text
+    debug_info::Observable{Makie.RichText} = Observable(rich("."))
+end
+
+function update_view!(
+    view::ViewContext,
+    env::IDDict{<:NetworkMessage},
+    msg::SatelliteState;
+)#cache=IDCache)
+    env[msg.id] = msg
+    # update mission clock
+    view.met[] = msg.elapsed_time
+    notify(view.met)
+    # NOTE: external Observable chaining to met needed to display UTC!
+
+    # update trajectory
+    circshift!(view.sat_trajectory_ECI[], -1)
+    view.sat_trajectory_ECI[][end] = Vec3d(msg.position_ECI)
+    notify(view.sat_trajectory_ECI)
+
+    # update plots
+    sat_conf = env[findfirst(p -> p isa SatelliteConfig, env)]
+    sim_conf = env[findfirst(p -> p isa SimConfig, env)]
+
+    circshift!(view.batt_plotable[], -1)
+    view.batt_plotable[][end] = msg.battery_level / sat_conf.power_battery_max * 100
+    notify(view.batt_plotable)
+
+    circshift!(view.stor_plotable[], -1)
+    view.stor_plotable[][end] = msg.storage_level / sat_conf.data_storage_max * 100
+    notify(view.stor_plotable)
+
+    circshift!(view.power_plotable[], -1)
+    view.power_plotable[][end] = msg.net_power
+    notify(view.power_plotable)
+
+    circshift!(view.data_plotable[], -1)
+    view.data_plotable[][end] = msg.net_data / 1e6
+    notify(view.data_plotable)
+
+    circshift!(view.time_plot[], -1)
+    view.time_plot[][end] = sim_conf.start_time + Dates.Millisecond(1000*msg.elapsed_time)
+    notify(view.time_plot)
+
+    # update attitude
+    # NOTE: external Observable chaining to body mesh needed to make use of this!
+    view.q_Body_ECI[] = dcm_to_quat(msg.attitude_ECI_Body')
+    notify(view.q_Body_ECI)
+
+    view.target_line_ECI[][1] = msg.position_ECI
+    if msg.target in keys(env) && msg.target < typemax(IDType)
+        target = env[msg.target]
+
+        if target isa GroundState
+            view.target_line_ECI[][2] = target.position_ECI
+
+        elseif target isa SunState
+            view.target_line_ECI[][2] =
+                msg.position_ECI +
+                0.33*6371e3*normalize(target.position_ECI - msg.position_ECI)
+
+        elseif target isa MagneticFieldState
+            view.target_line_ECI[][2] =
+                0.33*6371e3*normalize(target.direction_ECI) + msg.position_ECI
+
+        else
+
+        end
+    else
+        view.target_line_ECI[][2] = NaN
+    end
+
+    notify(view.target_line_ECI)
+
+    view.mode_color[] = env[msg.mode].color
+    notify(view.mode_color)
+    view.tail_color[] = [view.mode_color[] for _ in eachindex(view.tail_color[])]
+    notify(view.tail_color)
+end
+
+function update_view!(
+    view::ViewContext,
+    env::IDDict{<:NetworkMessage},
+    msg::SatelliteConfig,
+)
+    env[msg.id] = msg
+end
+
+function update_view!(view::ViewContext, env::IDDict{<:NetworkMessage}, msg::SunState)
+    env[msg.id] = msg
+    view.sun_pos_ECI[] = msg.position_ECI
+    notify(view.sun_pos_ECI)
+end
+function update_view!(view::ViewContext, env::IDDict{<:NetworkMessage}, msg::EarthState)
+    env[msg.id] = msg
+    view.q_ECEF_ECI[] = dcm_to_quat(msg.attitude_ECI_ECEF)
+    notify(view.q_ECEF_ECI)
+    # NOTE: external Observable chaining to view.q_ECEF_ECI required to make use of this!
+end
+function update_view!(
+    view::ViewContext,
+    env::IDDict{<:NetworkMessage},
+    msg::MagneticFieldState,
+)
+    env[msg.id] = msg
+end
+
+function update_view!(view::ViewContext, env::IDDict{<:NetworkMessage}, msg::GroundState)
+    # cache this state so later on other state updates can get it
+    env[msg.id] = msg
+
+    # check if we need to resize the Observables vectors:
+    # (note: this triggers if msg is a *new* GroundState as well. handy.)
+
+    gs_count_new = length(filter(p -> p.second isa GroundState, env))
+    if view.gs_count != gs_count_new
+        view.gs_count = gs_count_new
+        view.gs_positions_ECI[] = [Vec3d(NaN) for _ = 1:gs_count_new]
+        view.gs_label_positions_ECI[] = [Vec3d(NaN) for _ = 1:gs_count_new]
+        view.gs_labels[] = ["." for _ = 1:gs_count_new]
+        view.gs_colors[] = [RGBAf(0.0, 0.0, 0.0, 0.0) for _ = 1:gs_count_new]
+    end
+    k = 1
+    for key in keys(env)
+        if env[key] isa GroundState
+            view.gs_positions_ECI[][k] = env[key].position_ECI
+            view.gs_label_positions_ECI[][k] = 1.1*env[key].position_ECI
+            this_conf = find_config(env[key], env)
+            this_mode = find_mode(this_conf, env)
+            view.gs_labels[][k] = string(this_conf.name)
+            view.gs_colors[][k] =
+                env[key].visible ? this_mode.color : RGBAf(0.6, 0.6, 0.6, 1.0)
+
+            k += 1
+        end
+    end
+    notify(view.gs_positions_ECI)
+    notify(view.gs_label_positions_ECI)
+    notify(view.gs_labels)
+    notify(view.gs_colors)
+end
+
+function update_view!(view::ViewContext, env::IDDict{<:NetworkMessage}, msg::ModeConfig)
+    env[msg.id] = msg
+    notify(view.mode_color)
+end
+
+function update_view!(view::ViewContext, env::IDDict{<:NetworkMessage}, msg::EarthConfig)
+    env[msg.id] = msg
+end
+function update_view!(view::ViewContext, env::IDDict{<:NetworkMessage}, msg::LLAConstraint)
+    env[msg.id] = msg
+end
+function update_view!(
+    view::ViewContext,
+    env::IDDict{<:NetworkMessage},
+    msg::MagneticFieldConfig,
+)
+    env[msg.id] = msg
+end
+function update_view!(view::ViewContext, env::IDDict{<:NetworkMessage}, msg::GroundConfig)
+    env[msg.id] = msg
+end
+function update_view!(view::ViewContext, env::IDDict{<:NetworkMessage}, msg::SunConfig)
+    env[msg.id] = msg
+end
+
+# notable exception:
+#   - met_label: calculated by lift() outside. Can it go in the struct?? IDK.
+#   - body_frame_visible and other *visibles: toggled by user input on monitor, not in sim
+#   - 
+
 function monitor(; config_path::AbstractString = joinpath("config", "example.jsonc"))
 
     textures = get_maps()
@@ -78,8 +303,19 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     earth_mesh_v = get_sphere_mesh()
     body_mesh_val = get_body_mesh()
 
-    sim, sat, sat_config, target_states, target_configs, constraints, modes =
-        handle_new_config(config_path)
+    sim, sat, sat_config, sim_environment = handle_new_config(config_path)
+
+    sim_environment[sim.id] = sim
+    sim_environment[sat.id] = sat
+    sim_environment[sat_config.id] = sat_config
+
+    target_states = filtertype(AbstractTarget, sim_environment)
+    target_configs = filter(
+        p -> p.second isa AbstractConfig && !(p.second isa ModeConfig),
+        sim_environment,
+    )
+    constraints = filtertype(AbstractConstraint, sim_environment)
+    modes = filtertype(ModeConfig, sim_environment)
 
     helpstring = """
         Commands:
@@ -110,23 +346,30 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     obbufflen = 2*10^4
     start_time = sim.start_time
 
-    pos_ECI = Observable([Point3d(NaN) for k = 1:pointbufflen])
-    ob_time = Observable([start_time + Dates.Second(k) for k = 1:obbufflen])
-    batt = Observable([NaN for k = 1:obbufflen])
-    stor = Observable([NaN for k = 1:obbufflen])
-    power = Observable([NaN for k = 1:obbufflen])
-    data = Observable([NaN for k = 1:obbufflen])
-    rSO3 = Observable([NaN for k = 1:obbufflen])
-    target_dir_ECI = Observable([Point3d(NaN) for k = 1:2])
-    target_rel_ECI = Observable(Vec3d(NaN))
-    q_ECEF_ECI = Observable(Makie.Quaternion(0.0, 0.0, 0.0, 1.0))
-    pos_sun_ECI = Observable(Vec3d(0.0))
-    moment_ECI = Observable([Vec3d(NaN) for k = 1:2])
-    angular_velocity_ECI = Observable([Vec3d(NaN) for k = 1:2])
-    met = Observable(Float64(0.0))
-    met_label = lift(met) do l
+    view = ViewContext()
+
+    # pos_ECI = Observable([Point3d(NaN) for k = 1:pointbufflen])
+    # ob_time = Observable([start_time + Dates.Second(k) for k = 1:obbufflen])
+    # batt = Observable([NaN for k = 1:obbufflen])
+    # stor = Observable([NaN for k = 1:obbufflen])
+    # power = Observable([NaN for k = 1:obbufflen])
+    # data = Observable([NaN for k = 1:obbufflen])
+    # rSO3 = Observable([NaN for k = 1:obbufflen])
+    # target_dir_ECI = Observable([Point3d(NaN) for k = 1:2])
+    # target_rel_ECI = Observable(Vec3d(NaN))
+    # # q_ECEF_ECI = Observable(Makie.Quaternion(0.0, 0.0, 0.0, 1.0))
+    # pos_sun_ECI = Observable(Vec3d(0.0))
+    # moment_ECI = Observable([Vec3d(NaN) for k = 1:2])
+    # angular_velocity_ECI = Observable([Vec3d(NaN) for k = 1:2])
+    # met = Observable(Float64(0.0))
+
+    met_label = lift(view.met) do l
         return format_clock(l, start_time)
     end
+
+    # on(view.sun_pos_ECI) do s_ECI
+
+    # end
 
     body_frame_visible = Observable(false)
     axes_label_visible = Observable(false)
@@ -134,11 +377,22 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     cmd_label = Observable("")
 
-    GLMakie.activate!(title = "Hello, Greetings, and Welcome.")
+    tailcolor = Observable(suncolor)
+    debuginfo = Observable(rich("."))
+    configfilename = Observable("default")
+    debugvisible = Observable(true)
+
+    # gs_pts = Observable([Point3d(NaN)])
+    # gs_label_pts = Observable([Point3d(NaN)])
+    # gs_labels = Observable(["."])
+    # gs_col = Observable([RGBAf(0.0, 0.0, 0.0, 0.0)])
+
+    GLMakie.activate!(title = "$(string(sat_config.name))")
     GLMakie.set_theme!(Makie.Theme(fonts = (; regular = "Menlo")))
 
     al = AmbientLight(RGBf(0.4, 0.4, 0.4))
-    dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), pos_sun_ECI[])
+    dl = DirectionalLight(RGBf(243/255, 241/255, 218/255), view.sun_pos_ECI[])
+
     fig = GLMakie.Figure(size = (730, 580))
     display(fig)
     ax = LScene(
@@ -166,11 +420,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     hidespines!(ax_dbug)
     linkxaxes!(ax_batt, ax_power, ax_stor, ax_data, ax_dbug)
 
-    tailcolor = Observable(suncolor)
-    debuginfo = Observable(rich("."))
-    configfilename = Observable("default")
-    debugvisible = Observable(true)
-
     body_frame_v =
         body_scale*6371e3*[
             0.0 0.0 0.0;
@@ -188,10 +437,10 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     body_frame_color = [fill(:red, 3); fill(:green, 3); fill(:blue, 2)]
     inertial_frame_color = [fill(:red, 3); fill(:green, 3); fill(:blue, 2)]
 
-    lines!(ax, pos_ECI, color = tailcolor, linewidth = 2)
-    lines!(ax, target_dir_ECI, color = tailcolor, linewidth = 1)
-    lines!(ax, moment_ECI, color = :black, linewidth = 2)
-    lines!(ax, angular_velocity_ECI, color = :grey, linewidth = 1)
+    lines!(ax, view.sat_trajectory_ECI, color = view.tail_color, linewidth = 2)
+    lines!(ax, view.target_line_ECI, color = view.mode_color, linewidth = 1)
+    lines!(ax, view.moment_ECI, color = :black, linewidth = 2)
+    lines!(ax, view.angular_velocity_ECI, color = :grey, linewidth = 1)
     earth_mesh = GLMakie.mesh!(
         ax,
         earth_mesh_v,
@@ -232,11 +481,6 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         visible = body_frame_visible,
     )
     # C_ECI_ECEF0 = r_ecef_to_eci(ITRF(), J2000(), t_jd_s/3600/24, eops)
-    gs_pts = Observable([Point3d(NaN)])
-    gs_label_pts = Observable([Point3d(NaN)])
-    gs_labels = Observable(["."])
-    gs_col = Observable([RGBAf(0.0, 0.0, 0.0, 0.0)])
-    gs_dict = Dict{UInt16,GroundState}()
 
     eci_label_pts = 1.1*inertial_frame_v
     eci_labels =
@@ -247,8 +491,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     gs_scatter = GLMakie.meshscatter!(
         ax,
-        gs_pts,
-        color = gs_col,
+        view.gs_positions_ECI,
+        color = view.gs_colors,
         markersize = 0.02*6371e3,
         alpha = 1.0,
     )
@@ -289,8 +533,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
     gs_names = GLMakie.text!(
         ax,
-        gs_label_pts,
-        text = gs_labels,
+        view.gs_label_positions_ECI,
+        text = view.gs_labels,
         fontsize = 10.0,
         align = (:center, :center),
         visible = axes_label_visible,
@@ -326,7 +570,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         ax,
         1,
         0,
-        text = debuginfo,
+        text = view.debug_info,
         align = (:right, :bottom),
         space = :relative,
         fontsize = 10.0,
@@ -335,11 +579,15 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
         visible = debugvisible,
     )
 
-    batt_lines = lines!(ax_batt, ob_time, batt, color = :black, linewidth = 1)
-    stor_lines = lines!(ax_stor, ob_time, stor, color = :black, linewidth = 1)
-    power_lines = lines!(ax_power, ob_time, power, color = :black, linewidth = 1)
-    data_lines = lines!(ax_data, ob_time, data, color = :black, linewidth = 1)
-    rSO3_lines = lines!(ax_dbug, ob_time, rSO3, color = :black, linewidth = 1)
+    batt_lines =
+        lines!(ax_batt, view.time_plot, view.batt_plotable, color = :black, linewidth = 1)
+    stor_lines =
+        lines!(ax_stor, view.time_plot, view.stor_plotable, color = :black, linewidth = 1)
+    power_lines =
+        lines!(ax_power, view.time_plot, view.power_plotable, color = :black, linewidth = 1)
+    data_lines =
+        lines!(ax_data, view.time_plot, view.data_plotable, color = :black, linewidth = 1)
+    # rSO3_lines = lines!(ax_dbug, ob_time, rSO3, color = :black, linewidth = 1)
 
     nrate = 100_000
     secondly_debug = 2.0
@@ -347,7 +595,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     last_met = 0.0
     lastratetime = time()
 
-    packlen = length(packetize(SatelliteState(), 0x0000, UInt64(0)))
+    packlen = length(packetize(SatelliteState(), 0x0000))
     packlen = 1
     headbuff = zeros(UInt8, 8)
 
@@ -362,6 +610,31 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     # play = 0x01
 
     disable_makie_cam_keyboard!(cameracontrols(ax.scene))
+
+    # react to Satellite update
+    onany(view.sat_trajectory_ECI, view.q_Body_ECI) do pos_ECI, q_Body_ECI
+        GLMakie.rotate!(body_mesh, q_Body_ECI)
+        GLMakie.translate!(body_mesh, pos_ECI[end])
+
+        GLMakie.rotate!(body_frame, q_Body_ECI)
+        GLMakie.translate!(body_frame, pos_ECI[end])
+    end
+
+    # react to Earth update
+    on(view.q_ECEF_ECI) do q_ECEF_ECI
+        GLMakie.rotate!(earth_mesh, q_ECEF_ECI)
+        GLMakie.rotate!(fixed_frame, q_ECEF_ECI)
+        GLMakie.rotate!(ecef_names, q_ECEF_ECI)
+    end
+
+    # react to Sun update
+    on(view.sun_pos_ECI) do sun_pos_ECI
+        GLMakie.set_directional_light!(
+            ax,
+            color = RGBf(243/255, 241/255, 218/255),
+            direction = -Vec3d(sun_pos_ECI),
+        )
+    end
 
     # handle file drag/drop
     on(events(ax).dropped_files) do drop
@@ -378,7 +651,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
     end
 
     # camera controls
-    on(pos_ECI) do pos
+    on(view.sat_trajectory_ECI) do pos
         if CamState(cam_state[]) == body_focused
             cam.lookat[] = pos[end]
             update_cam!(ax.scene, cam)
@@ -388,9 +661,10 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             update_cam!(ax.scene, cam)
         elseif CamState(cam_state[]) == target_focused
             cam.lookat[] = pos[end]
-            cam.eyeposition[] =
-                (pos[end] + normalize(target_rel_ECI[])) -
-                6371e3*normalize(target_rel_ECI[])
+            cam.eyeposition[] = (
+                pos[end] -
+                6371e3*(normalize(view.target_line_ECI[][end] - view.target_line_ECI[][1]))
+            )
             update_cam!(ax.scene, cam)
         elseif CamState(cam_state[]) == free
             # no op 
@@ -424,7 +698,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 else
                     println("oh no!!!")
                 end
-                writeval = packetize(PlayMessage(UInt8(play[])), 0x0000, UInt64(1))
+                writeval = packetize(PlayMessage(UInt8(play[])), 0x0000)
                 write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
@@ -432,7 +706,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             if event.key == Keyboard.left && play[] == 0x01
                 sleep_size[] = max(0, sleep_size[] - sleepstep)
                 cmd_label[] = "<<"
-                writeval = packetize(RateMessage(UInt8(sleep_size[])), 0x0000, UInt64(2))
+                writeval = packetize(RateMessage(UInt8(sleep_size[])), 0x0000)
                 write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
@@ -440,7 +714,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             if event.key == Keyboard.right && play[] == 0x01
                 sleep_size[] = min(0xff, sleep_size[] + sleepstep)
                 cmd_label[] = ">>"
-                writeval = packetize(RateMessage(UInt8(sleep_size[])), 0x0000, UInt64(2))
+                writeval = packetize(RateMessage(UInt8(sleep_size[])), 0x0000)
                 write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
@@ -448,7 +722,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             if event.key == Keyboard.k && play[] == 0x01
                 # todo: configure perturbation magnitude and duration elsewhere
                 pert = PerturbationMessage(Vec3d(1e-2*rand(3)), 5, Vec3d(0.0), 1)
-                writeval = packetize(pert, 0x0000, UInt64(0))
+                writeval = packetize(pert, 0x0000)
                 cmd_label[] = "kicked!"
                 write_transport(sock, writeval)
                 notify(cmd_label)
@@ -465,7 +739,8 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
                 texturek = mod(texturek, length(textures)) + 1
                 texture[] = load_earth_texture_to_ecef(textures[texturek])
                 notify(texture)
-                # return Consume(true)
+                cmd_label[] = "selected tex $(basename(textures[texturek]))"
+                notify(cmd_label)
             end
             if event.key == Keyboard.l
                 if body_frame_visible[]
@@ -508,7 +783,7 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
             if event.key == Keyboard.q
                 do_quit[] = true
                 cmd_label[] = "exiting..."
-                writeval = packetize(QuitMessage(0x01), 0x0000, UInt64(2))
+                writeval = packetize(QuitMessage(0x01), 0x0000)
                 write_transport(sock, writeval)
                 println("> sent command ", writeval, " to server")
                 notify(cmd_label)
@@ -521,192 +796,54 @@ function monitor(; config_path::AbstractString = joinpath("config", "example.jso
 
             ret = read_transport(sock; buff = rx_buff)
             type = ret[1]
-            count = 0
-            flags = 0
             len = 0
+            flags = 0
             simdata = UInt8[]
-            if type<:AbstractState
+            if !(type <: ControlMessage)
                 len = ret[2]
                 flags = ret[3]
-                count = ret[4]
-                simdata = ret[5]
+                simdata = ret[4]
+                sim_environment[simdata.id] = simdata
+                update_view!(view, sim_environment, simdata)
             end
 
-            if typeof(simdata) === PositionState # unused
-                circshift!(pos_ECI[], -1)
-                pos_ECI[][end] = Point3d(simdata.position_ECI)
-                notify(pos_ECI)
-
-                # update mission clock
-                met[] = simdata.elapsed_time
-                notify(met)
-
-            elseif typeof(simdata) === AttitudeState # unused
-            # GLMakie.rotate!(body_mesh, dcm_to_quat(simdata.attitude_ECI_Body'))
-            # GLMakie.translate!(body_mesh, pos_ECI[][end])
-
-            elseif typeof(simdata) === MagneticFieldState
-                target_states[simdata.id] = simdata
-
-            elseif typeof(simdata) === EarthState
-                q_ECEF_ECI[] = dcm_to_quat(simdata.attitude_ECI_ECEF)
-                notify(q_ECEF_ECI)
-                GLMakie.rotate!(earth_mesh, q_ECEF_ECI[])
-                GLMakie.rotate!(fixed_frame, q_ECEF_ECI[])
-                GLMakie.rotate!(ecef_names, q_ECEF_ECI[])
-                gs_cones_visible[] && GLMakie.rotate!(gs_cones, q_ECEF_ECI[])
-
-            elseif typeof(simdata) === SunState
-                GLMakie.set_directional_light!(
-                    ax,
-                    color = RGBf(243/255, 241/255, 218/255),
-                    direction = -Vec3d(simdata.position_ECI),
-                )
-                target_states[simdata.id] = simdata
-
-            elseif typeof(simdata) === GroundState
-                gs_dict[simdata.id] = simdata
-                target_states[simdata.id] = simdata
-
-            elseif typeof(simdata) === SatelliteState
-                # update mission clock
-                met[] = simdata.elapsed_time
-                notify(met)
-
-                # update position
-                circshift!(pos_ECI[], -1)
-                pos_ECI[][end] = Point3d(simdata.position_ECI)
-                notify(pos_ECI)
-
-                circshift!(batt[], -1)
-                batt[][end] = simdata.battery_level / sat_config.power_battery_max * 100
-                notify(batt)
-                circshift!(stor[], -1)
-                stor[][end] = simdata.storage_level / sat_config.data_storage_max * 100
-                notify(stor)
-                circshift!(power[], -1)
-                power[][end] = simdata.net_power
-                notify(power)
-                circshift!(data[], -1)
-                data[][end] = simdata.net_data / 1e6
-                notify(data)
-                circshift!(rSO3[], -1)
-                rSO3[][end] = residualSO3(simdata.attitude_ECI_Body')
-                notify(rSO3)
-                circshift!(ob_time[], -1)
-                ob_time[][end] = start_time + Dates.Millisecond(1000*simdata.elapsed_time)
-                notify(ob_time)
-
-                # update attitude
-                q = dcm_to_quat(simdata.attitude_ECI_Body')
-                GLMakie.rotate!(body_mesh, q)
-                GLMakie.translate!(body_mesh, pos_ECI[][end])
-
-                GLMakie.rotate!(body_frame, q)
-                GLMakie.translate!(body_frame, pos_ECI[][end])
-
-                # update color and target direction
-                mode_conf = modes[findfirst(x -> x.id == simdata.mode, modes)]
-                target_rel_ECI[] = simdata.attitude_ECI_Body*mode_conf.direction_Body
-                notify(target_rel_ECI)
-
-                # mode_conf = mode_table[simdata.mode]
-                tailcolor[] = mode_conf.color
-
-                if simdata.target == typemax(IDType)
-                    target_dir_ECI[] = [Point3d(NaN), Point3d(NaN)]
-                elseif isa(target_states[simdata.target], SunState)
-                    target_dir_ECI[] = [
-                        simdata.position_ECI,
-                        simdata.position_ECI +
-                        0.33*6371e3*normalize(
-                            target_states[simdata.target].position_ECI -
-                            simdata.position_ECI,
-                        ),
-                    ]
-                elseif isa(target_states[simdata.target], GroundState)
-                    target_dir_ECI[] =
-                        [simdata.position_ECI, target_states[simdata.target].position_ECI]
-
-                elseif isa(target_states[simdata.target], MagneticFieldState)
-                    target_dir_ECI[] = [
-                        simdata.position_ECI,
-                        0.33*6371e3*normalize(target_states[simdata.target].direction_ECI) + simdata.position_ECI,
-                    ]
-                else
-                    println("unidentified target type!")
-                end
-
-                angular_velocity_ECI[] = [
-                    simdata.position_ECI,
-                    simdata.position_ECI +
-                    angular_velocity_scale*6371e3*simdata.angular_velocity_ECI_Body,
-                ]
-                moment_ECI[] = [
-                    simdata.position_ECI,
-                    simdata.position_ECI +
-                    moment_scale*6371e3*normalize(
-                        simdata.attitude_ECI_Body*simdata.net_moment_Body,
+            sats = sim_environment[findfirst(p -> p isa SatelliteState, sim_environment)]
+            mode_conf = sim_environment[sats.mode]
+            target_name =
+                sats.target < typemax(IDType) ?
+                string(find_config(sim_environment[sats.target], sim_environment).name) :
+                "---"
+            view.debug_info[] = rich(
+                "mode: ",
+                rich(
+                    String(Printf.@sprintf "%20s" mode_conf.name),
+                    "\n",
+                    color = view.mode_color[],
+                ),
+                "target: ",
+                rich(String(Printf.@sprintf "%20s" string(target_name)), "\n"),
+                "config: ",
+                rich(String(Printf.@sprintf "%20s" configfilename[]), "\n"),
+                "time gain: ",
+                rich(
+                    String(
+                        Printf.@sprintf "%18u:1" Int64(
+                            round((view.met[] - last_met)/(time() - lastratetime)),
+                        )
                     ),
-                ]
-
-                notify(tailcolor)
-                notify(target_dir_ECI)
-                notify(angular_velocity_ECI)
-                notify(moment_ECI)
-
-                target_name =
-                    (simdata.target == typemax(IDType)) ? "nothing" :
-                    find_config(target_states[simdata.target], target_configs).name
-
-                debuginfo[] = rich(
-                    "mode: ",
-                    rich(
-                        String(Printf.@sprintf "%20s" mode_conf.name),
-                        "\n",
-                        color = tailcolor[],
-                    ),
-                    "target: ",
-                    rich(String(Printf.@sprintf "%20s" string(target_name)), "\n"),
-                    "config: ",
-                    rich(String(Printf.@sprintf "%20s" configfilename[]), "\n"),
-                    "time gain: ",
-                    rich(
-                        String(
-                            Printf.@sprintf "%18u:1" Int64(
-                                round((met[] - last_met)/(time() - lastratetime)),
-                            )
-                        ),
-                    ),
-                )
-
-                # debuginfo[] = rich("target: ", "nothin")
-                notify(debuginfo)
-            else
-                println("unknown message type $(typeof(simdata))")
-            end
-
-            # update all groundstations
-            gs_pts[] = [gs_dict[key].position_ECI for key in keys(gs_dict)]
-            notify(gs_pts)
-            gs_label_pts[] = [1.1*gs_dict[key].position_ECI for key in keys(gs_dict)]
-            notify(gs_label_pts)
-            gs_labels[] = [
-                string(find_config(gs_dict[key], target_configs).name) for
-                key in keys(gs_dict)
-            ]
-            notify(gs_labels)
-            gs_col[] = [gs_dict[key].visible ? gscolor : idlecolor for key in keys(gs_dict)]
-            notify(gs_col)
+                ),
+            )
+            notify(view.debug_info)
 
             bytecount += len + 8
 
             if time() - lastratetime > secondly_debug
-                Printf.@printf "rate: %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
-                Printf.@printf "time gain: %u:1 \n" Int64(
-                    round((met[] - last_met)/(time() - lastratetime)),
-                )
-                last_met = met[]
+                # Printf.@printf "rate: %0.3f MB/s\n" 1e-6*bytecount/(time() - lastratetime)
+                # Printf.@printf "time gain: %u:1 \n" Int64(
+                #     round((met[] - last_met)/(time() - lastratetime)),
+                # )
+                # println("mode: $(mode_conf.name), target: $(target_name)")
+                last_met = view.met[]
                 lastratetime = time()
                 bytecount = 0
                 GLMakie.reset_limits!(ax_power)
@@ -862,20 +999,21 @@ function write_csv(
 
     rx_buff = zeros(UInt8, SOAP_MAX_BUFF_LEN)
     met = 0.0
+    this_count = UInt64(0x00)
     while !eof(sock.sock)
         try
 
             ret = read_transport(sock; buff = rx_buff)
             type = ret[1]
-            count = 0
             flags = 0
             len = 0
             simdata = UInt8[]
             if type<:AbstractState
                 len = ret[2]
                 flags = ret[3]
-                count = ret[4]
-                simdata = ret[5]
+                simdata = ret[4]
+
+                this_count += 1
             end
 
             if typeof(simdata) === EarthState
@@ -887,7 +1025,6 @@ function write_csv(
                 target_states[simdata.id] = simdata
 
             elseif typeof(simdata) === GroundState
-                # gs_dict[simdata.id] = simdata
                 target_states[simdata.id] = simdata
                 # met[] = simdata.elapsed_time
 

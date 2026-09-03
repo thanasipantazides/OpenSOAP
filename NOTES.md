@@ -2,7 +2,8 @@
 
 ## To do
 
-- [ ] swap underlying socket to UDP so there is no locking of sim based on TCP. Note: because of the current Julia implementation of sockets, there is no Unix domain datagram socket available. Shucks.
+- [ ] ~~swap underlying socket to UDP so there is no locking of sim based on TCP~~. Note: because of the current Julia implementation of sockets, there is no Unix domain datagram socket available. Shucks.
+  - Another note: visually, you actually do want the TCP ACK to hold up transfer of more data. This forces the simulation to run in lockstep with the display. There are ways around this, but they are more work.
 - [x] add PD control on $\mathrm{SO}(3)$ directly.
 - [ ] ingest complex config. Or maybe a callback-ability for state transition events. or something.
 - [ ] Make it easier to launch and exit.
@@ -10,6 +11,12 @@
 - [x] Add labeling control to monitor.
 - [ ] Add a `initialize_targets()` function or similar, which just calls `step!()` on each target at the initial time and spacecraft position.
 - [ ] In `simulate.jl`, maybe put all configs in a big dict (by ID), ditto for all states. Maybe two dicts, one by ID and another by type. And just pass the dict around instead a bunch of parameters.
+  - [ ] Or put _everything_ into one really big dict? Since the IDs are unique? Less args to throw around everywhere. To do this:
+    - [ ] Everywhere `modes::Vector{ModeConfig}` appears, replace with `modes::IDDict{ModeConfig}` and update local logic accordingly.
+    - [x] Everywhere `(target_states, target_configs, constraints, modes)` appear together, merge into one `IDDict`. Update local logic to also find based on type, if needed.
+      - [x] `io.jl`
+    - [ ] Add a cache object that gets passed around internally in the simulation steps. `cache.sat == sat.id`, `cache.groundstations == filter(p->p.id && p isa GroundState, sim_env)`. And so on.
+- [x] Make all structs mutable and default-constructible via `@kwdef`. This enables the deserializer to allocate, then memcpy into them. ~~Use internal `const` fields for IDs.~~
 
 ### Complex config
 
@@ -35,11 +42,11 @@ Items needed to implement this:
   - [x] It gets an ID, and a `ModeConfig` can have a field `constraint_ids::Vector{IDType}` (similar to how it now has `target_ids::Vector{IDType}` which refer to the targets for a mode.)
   - How is this different from just being another `TargetState`? Ans: it doesn't have a `direction`. Just some criteria.
 - [x] A type `LLAMaskConfig` or similar. Include a flag (in JSON too) for whether to point nadir always along field, zenith along field, along field S, or along field N.
-- [ ] For now, only `MagneticState` needs to be serializable.
+- [x] For now, only `MagneticState` needs to be serializable.
 - [x] Add a JSON loader for `MagneticState`. Should be easy. If the target has a `"mask"` key, make a `LLAMaskConfig` that is linked to `MagneticState` by ID.
 - [x] Add a JSON loader for `LLAMaskConfig`.
-- [ ] Add a `step!` function for a `MagneticState`. Just query the IGRF and flip the vector nadir if necessary.
-- [ ] Add a `set_visibility!` function for a `MagneticState`.
+- [x] Add a `step!` function for a `MagneticState`. Just query the IGRF and flip the vector nadir if necessary.
+- [x] Add a `set_visibility!` function for a `MagneticState`.
 
 Could imagine other kinds of `*MaskConfig`s, maybe for ECI position, or dynamic state properties.
 
@@ -104,3 +111,30 @@ Items to do:
 - [x] Rewrite (and reconsider) `mode_table`. It currently is a matrix of targets (rows) by modes (cols) indicating mode dependency on targets. This is complicated by the introduction of constraints. It's not part of a clean function signature. If we kept it, we would instead multiple by `[visibilities; constraints_satisfied]` boolean vector.
 - [ ] Remove `params` from signature. There's a `Dict` in `SimConfig` that is meant to hold stuff like this.
 - [ ] Revise `step_satellite` to `step!()`
+
+### REPL interactivity
+
+Plan is to use existing network ser/des stuff to pass `<:AbstractConfig` and `<:AbstractState`s to `core` from REPL context. Something like this:
+
+![REPL interactivity plan](assets/repl-plan.pdf)
+
+Things to do:
+
+- [x] Make all `<:AbstractConfig` serializable. Maybe switch over to built in serialization if needed.
+  - [x] In, e.g., `ModeConfig`, `Vector{IDType}` is **not** `isbits()`. Need to use a StaticArray instead, likely. I think this is fine—size of the `ModeConfig.target_ids` list is fixed after initialization.
+  - This turned out to be very involved. Basically need to rewrite the ser/des functions, but they end up being more generic which is nice. But some side effects:
+    - [x] Stop sending a `(count, <:NetworkMessage)` tuple as the default State message from core to monitor.
+    - [ ] If a dedicated `count` message is needed, create a new dedicated message type for that. (Currently, `count` is unused in monitor).
+    - [x] Add a default constructor for all `<:NetworkMessage` mutable types. This is required for serialization of mutable structs.
+- [x] Add a REPL to CORE IP/port and sockets. REPL process is server, CORE is client.
+- [x] Set up the socket in CORE and add an async listening process on it. Use `Threads.@spawn`.
+  - [x] Deserialize what comes off the socket and conditionally update some process-wide `IDDict`s if the contents look good.
+- [x] REPL interface needs:
+  - [x] Some way to identify the shared objects in a bag. Maybe a way to mark certain ones as stale.
+  - [x] An async socket interface to CORE, with an `update()` function that writes (either all, or just modified) objects to the interface.
+
+### Notes from serializability via reinterpret:
+
+- `Vector{IDType}` is not serializable (it is not `isbits`).
+- `StaticArrays.SVector{N, UInt16}` is `isbits`. But `N` shouldn't be much bigger than 100.
+- `StaticArrays.SizedVector{N}` not `isbits`.
