@@ -7,3 +7,11 @@ Manifest.toml
 log/
 
 .libHSL/
+
+build/
+node_modules/
+.vitepress/
+docs/*.pdf
+docs/*.json
+
+*.bkp
